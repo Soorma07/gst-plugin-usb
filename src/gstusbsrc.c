@@ -52,7 +52,7 @@ gst_usb_src_base_init (gpointer gclass)
     "usbsrc",
     "Hardware",
     "Elements that receives data across an USB link",
-    "Michael Grüner <<michael.gruner@ridgerun.com>>\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
+    "Michael Gruner <<michael.gruner@ridgerun.com>>\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&src_factory));
@@ -136,9 +136,9 @@ gst_usb_src_stop (GstBaseSrc * bs)
 }
 
 static GstFlowReturn
-gst_usb_src_create (GstPushSrc * bs, GstBuffer ** buf)
+gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
 {
-  GstUsbSrc *s = GST_USB_SRC (bs);
+  GstUsbSrc *s = GST_USB_SRC (ps);
 
   return GST_FLOW_OK;
 }
