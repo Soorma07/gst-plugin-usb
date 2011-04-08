@@ -28,6 +28,10 @@ typedef struct _GstUsbSrcClass GstUsbSrcClass;
 struct _GstUsbSrc
 {
   GstPushSrc parent;
+  /* 
+   * TODO:
+   * Add here my vars
+   */
 };
 
 struct _GstUsbSrcClass 
