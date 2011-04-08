@@ -1,0 +1,9 @@
+WHAT IT IS
+----------
+gst-usb-plugin provides an usbsink and usbsrc for gstreamer to allow
+embedded systems to create gstreamer pipelines between devices connected
+by usb connections.
+
+HOW TO USE IT
+-------------
+Carefully
