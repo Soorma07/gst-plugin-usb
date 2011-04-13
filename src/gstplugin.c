@@ -13,7 +13,7 @@ static gboolean
 plugin_init (GstPlugin * plugin)
 {
   if (!gst_element_register (plugin, "usbsink", GST_RANK_NONE,
-      GST_TYPE_USBSINK)) {
+      GST_TYPE_USB_SINK)) {
     return FALSE;
   }
 
@@ -36,5 +36,5 @@ GST_PLUGIN_DEFINE (
     PACKAGE_VERSION,
     "BSD",
     "RidgeRun",
-    "http://www.ridgerun.com/"
+    "http://ridgerun.github.com"
 )
