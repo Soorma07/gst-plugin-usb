@@ -38,14 +38,23 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_STATIC_CAPS ("ANY")
     );
 
-GST_BOILERPLATE (GstUsbSink, gst_usb_sink, GstElement,
-    GST_TYPE_ELEMENT);
+GST_BOILERPLATE (GstUsbSink, gst_usb_sink, GstBaseSink,
+    GST_TYPE_BASE_SINK);
 
 static void gst_usb_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_usb_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
-static gboolean gst_usb_sink_set_caps (GstPad * pad, GstCaps * caps);
+static gboolean gst_usb_sink_set_caps 
+    (GstBaseSink * bsink, GstCaps * caps);
+static GstCaps * gst_usb_sink_get_caps (GstBaseSink * bsink);
+static GstFlowReturn gst_usb_sink_render 
+    (GstBaseSink *sink, GstBuffer *buffer);
+static gboolean gst_usb_sink_start (GstBaseSink *sink);
+static gboolean gst_usb_sink_stop (GstBaseSink *sink);
+	
+
+
 
 /* GObject vmethod implementations */
 
@@ -74,7 +83,7 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
 
   /* debug category for fltering log messages
    */
-  GST_DEBUG_CATEGORY_INIT (gst_usbsink_debug, "usbsink",
+  GST_DEBUG_CATEGORY_INIT (gst_usb_sink_debug, "usbsink",
       0, "USB sink element");
 
   gobject_class = (GObjectClass *) klass;
@@ -87,6 +96,14 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
   g_object_class_install_property (gobject_class, PROP_SILENT,
       g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
           FALSE, G_PARAM_READWRITE));
+		  
+  /* Using basesink class
+   */
+  gstbasesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_get_caps);
+  gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_set_caps);
+  gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_usb_sink_render);
+  gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_usb_sink_start);
+  gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_usb_sink_stop);	  
 }
 
 /* initialize the new element
@@ -98,13 +115,6 @@ static void
 gst_usb_sink_init (GstUsbSink * filter,
     GstUsbSinkClass * gclass)
 {
-  filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
-  gst_pad_set_setcaps_function (filter->sinkpad,
-                                GST_DEBUG_FUNCPTR(gst_usb_sink_set_caps));
-  gst_pad_set_getcaps_function (filter->sinkpad,
-                                GST_DEBUG_FUNCPTR(gst_pad_proxy_getcaps));
-
-  gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   filter->silent = TRUE;
 }
 
@@ -112,7 +122,7 @@ static void
 gst_usb_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstUsbSink *filter = GST_USBSINK (object);
+  GstUsbSink *filter = GST_USB_SINK (object);
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -142,17 +152,50 @@ gst_usb_sink_get_property (GObject * object, guint prop_id,
 
 /* GstElement vmethod implementations */
 
-/* this function handles the link with other elements */
-static gboolean
-gst_usb_sink_set_caps (GstPad * pad, GstCaps * caps)
+static GstCaps *
+gst_usb_sink_get_caps (GstBaseSink * bsink)
 {
-  GstUsbSink *filter;
-  GstPad *otherpad;
+  /* TODO:
+   * this function is called when asked for the caps of the sink.
+   * Ask here for the caps across the usb link.
+   */	
+  return NULL;
+}
 
-  filter = GST_USB_SINK (gst_pad_get_parent (pad));
-  otherpad = (pad == filter->srcpad) ? filter->sinkpad : filter->srcpad;
-  gst_object_unref (filter);
+static gboolean
+gst_usb_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
+{
+  /* TODO:
+   * this function is called when the sink pad caps are being set.
+   * Set the caps of the usb src across usb link.
+   */
 
-  return gst_pad_set_caps (otherpad, caps);
+  return TRUE;
+}
+
+static GstFlowReturn gst_usb_sink_render (GstBaseSink *sink, 
+										  GstBuffer *buffer)
+{
+  /* TODO:
+  * Each received buffer will call this function.
+  * Send this buffer across usb link
+  */
+  return GST_FLOW_OK;
+}
+
+static gboolean gst_usb_sink_start (GstBaseSink *sink)
+{
+  /* TODO:
+  * Init usb device here!
+  */
+  return TRUE;
+}
+
+static gboolean gst_usb_sink_stop (GstBaseSink *sink)
+{
+  /*TODO:
+   * Free usb device here!
+   */
+  return TRUE;
 }
 
