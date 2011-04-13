@@ -10,7 +10,6 @@
 
 G_BEGIN_DECLS
 
-/* #defines don't like whitespacey bits */
 #define GST_TYPE_USB_SRC \
   (gst_usb_src_get_type())
 #define GST_USB_SRC(obj) \

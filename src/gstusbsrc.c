@@ -10,6 +10,7 @@
 #include <gst/gst.h>
 
 #include "gstusbsrc.h"
+#include "driver.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_usb_src_debug);
 #define GST_CAT_DEFAULT gst_usb_src_debug
@@ -36,10 +37,12 @@ static void gst_usb_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static gboolean gst_usb_src_set_caps (GstBaseSrc * bs, GstCaps * caps);
 static GstCaps *gst_usb_src_get_caps (GstBaseSrc * bs);
+static void gst_usb_src_fixate (GstPad * pad, GstCaps * caps); //Used if some fixed caps are needed.
+
 static GstFlowReturn gst_usb_src_create (GstPushSrc * bs, GstBuffer ** buf);
 static gboolean gst_usb_src_start (GstBaseSrc * bs);
 static gboolean gst_usb_src_stop (GstBaseSrc * bs);
-static void gst_usb_src_fixate (GstPad * pad, GstCaps * caps);
+
 
 /* GObject vmethod implementations */
 
@@ -124,6 +127,13 @@ gst_usb_src_start (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
 
+  /*
+   * TODO: start USB here!
+   */
+
+  g_print("Initializing USB\n");
+  usbmain();
+  g_print("Success initializing USB\n");
   return TRUE;
 }
 
@@ -148,6 +158,10 @@ gst_usb_src_get_caps (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
 #if 0
+  /*
+   * TODO: get caps form usb link in here
+   */
+
   GstXContext *xcontext;
   gint width, height;
 
