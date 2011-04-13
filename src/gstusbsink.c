@@ -52,6 +52,7 @@ static GstFlowReturn gst_usb_sink_render
     (GstBaseSink *sink, GstBuffer *buffer);
 static gboolean gst_usb_sink_start (GstBaseSink *sink);
 static gboolean gst_usb_sink_stop (GstBaseSink *sink);
+static gboolean gst_usb_sink_event(GstBaseSink *sink, GstEvent *event);
 	
 
 
@@ -103,7 +104,8 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
   gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_set_caps);
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_usb_sink_render);
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_usb_sink_start);
-  gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_usb_sink_stop);	  
+  gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_usb_sink_stop);	
+  gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_usb_sink_event);	  
 }
 
 /* initialize the new element
@@ -193,9 +195,16 @@ static gboolean gst_usb_sink_start (GstBaseSink *sink)
 
 static gboolean gst_usb_sink_stop (GstBaseSink *sink)
 {
-  /*TODO:
+  /* TODO:
    * Free usb device here!
    */
   return TRUE;
 }
 
+static gboolean gst_usb_sink_event (GstBaseSink *sink, GstEvent *event)
+{
+  /* TODO:
+   * Events need to be handled across usb link!
+   */
+  return TRUE;
+}
