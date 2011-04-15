@@ -4,7 +4,8 @@ libgstusb_la_SOURCES = gstplugin.c \
 gstusbsink.c gstusbsink.h \
 gstusbsrc.c gstusbsrc.h \
 driver.c driver.h \
-usbstring.c usbstring.h
+usbstring.c usbstring.h \
+usbhost.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgstusb_la_CFLAGS = $(GST_CFLAGS)
