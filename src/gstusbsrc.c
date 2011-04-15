@@ -37,9 +37,8 @@ static void gst_usb_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static gboolean gst_usb_src_set_caps (GstBaseSrc * bs, GstCaps * caps);
 static GstCaps *gst_usb_src_get_caps (GstBaseSrc * bs);
-static void gst_usb_src_fixate (GstPad * pad, GstCaps * caps); //Used if some fixed caps are needed.
-
-static GstFlowReturn gst_usb_src_create (GstPushSrc * bs, GstBuffer ** buf);
+static GstFlowReturn gst_usb_src_create 
+    (GstPushSrc * ps, GstBuffer ** buf);
 static gboolean gst_usb_src_start (GstBaseSrc * bs);
 static gboolean gst_usb_src_stop (GstBaseSrc * bs);
 
@@ -55,7 +54,8 @@ gst_usb_src_base_init (gpointer gclass)
     "usbsrc",
     "Hardware",
     "Elements that receives data across an USB link",
-    "Michael Gruner <<michael.gruner@ridgerun.com>>\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
+    "Michael Gruner <<michael.gruner@ridgerun.com>>\
+	\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&src_factory));
@@ -90,8 +90,6 @@ gst_usb_src_init (GstUsbSrc * src,
     GstUsbSrcClass * gclass)
 {
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
-  gst_pad_set_fixatecaps_function (GST_BASE_SRC_PAD (src),
-      gst_usb_src_fixate);
 }
 
 static void
@@ -149,6 +147,12 @@ static GstFlowReturn
 gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
 {
   GstUsbSrc *s = GST_USB_SRC (ps);
+  
+  /* 
+   * TODO:
+   * This is only for running a test
+   */
+  *buf = gst_buffer_new_and_alloc (640*480*3); 
 
   return GST_FLOW_OK;
 }
@@ -246,17 +250,3 @@ gst_usb_src_set_caps (GstBaseSrc * bs, GstCaps * caps)
   return TRUE;
 }
 
-static void
-gst_usb_src_fixate (GstPad * pad, GstCaps * caps)
-{
-#if 0
-  gint i;
-  GstStructure *structure;
-
-  for (i = 0; i < gst_caps_get_size (caps); ++i) {
-    structure = gst_caps_get_structure (caps, i);
-
-    gst_structure_fixate_field_nearest_fraction (structure, "framerate", 25, 1);
-  }
-#endif
-}
