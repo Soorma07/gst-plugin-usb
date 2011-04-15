@@ -26,12 +26,11 @@ int usb_host_new(usb_host *host, VERBOSE v)
 {
   if (libusb_init ( &(host->ctx) ) == 1)  /* 0 on success LIBUSB_ERROR on error */
   {
-    fprintf(stderr, "Cannot initialize usb context.\n");
-	return EXIT_FAILURE;
+	return ERR_INIT;
   }	
   libusb_set_debug (host->ctx, v); /* Set level of verbosity */
  
-  return EXIT_SUCCESS;
+  return EOK;
 }
 
 int usb_host_device_open(usb_host *host)
@@ -44,8 +43,7 @@ int usb_host_device_open(usb_host *host)
   
   if (cnt < 0)
   {
-    fprintf(stderr, "No devices conected.\n");
-	return EXIT_FAILURE;  
+	return ERR_FOUND;  
   }
   
   for (i = 0; i < cnt; i++) 
@@ -62,13 +60,12 @@ int usb_host_device_open(usb_host *host)
   {
     if ( libusb_open(host->dev, &(host->devh)) )
     {
-      fprintf(stderr, "Cannot open desired device.\n");
-	  return EXIT_FAILURE;    
+	  return ERR_FOUND;    
     }
   }
 
   libusb_free_device_list(list, 1);	
-  return EXIT_SUCCESS;  
+  return EOK;  
 }
 
 int usb_host_device_transfer(usb_host *host, 
@@ -83,11 +80,10 @@ int usb_host_device_transfer(usb_host *host,
 							   
   if (r != 0 && host->transferred != length)
   {
-    fprintf(stderr, "Transfer failed.\n");
-	return EXIT_FAILURE; 
+	return ERR_TRANSFER; 
   }
   
-  return EXIT_SUCCESS;
+  return EOK;
 }								  
 								  
 

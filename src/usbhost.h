@@ -15,6 +15,28 @@
 typedef unsigned char EP;
 
 /**
+ * Exit codes for error handling
+ */
+typedef enum _EXIT_CODE
+{
+  /** Everything ok */	
+  EOK,
+  
+  /** Error openind usb context */
+  ERR_INIT,
+  
+  /** Unable to find desired device */
+  ERR_FOUND,
+  
+  /** Error opening the device */
+  ERR_OPEN,
+  
+  /** Error during transfer */
+  ERR_TRANSFER
+  
+} EXIT_CODE;
+
+/**
  * Levels of verbosity to implement.
  */
 typedef enum _VERBOSE
