@@ -68,7 +68,7 @@ gst_usb_sink_base_init (gpointer gclass)
     "usbsink",
     "Hardware",
     "Elements that sends data across an USB link",
-    "Michael Grüner <<michael.gruner@ridgerun.com>>\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
+    "Michael Gruner <<michael.gruner@ridgerun.com>>\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
 
     gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&sink_factory));
@@ -203,8 +203,15 @@ static gboolean gst_usb_sink_stop (GstBaseSink *sink)
 
 static gboolean gst_usb_sink_event (GstBaseSink *sink, GstEvent *event)
 {
+  
   /* TODO:
    * Events need to be handled across usb link!
    */
+   /* Gstreamer is telling us to send the message */
+   //if (GST_EVENT_TYPE (event) == GST_EVENT_SINK_MESSAGE )
+   //{
+	   /* Send event here */
+	 //  return TRUE;
+   //} 
   return TRUE;
 }
