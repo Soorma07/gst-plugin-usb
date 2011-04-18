@@ -7,6 +7,7 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstbasesink.h>
+#include "usbhost.h"
 
 G_BEGIN_DECLS
 
@@ -33,6 +34,8 @@ struct _GstUsbSink
    */
 
   gboolean silent;
+  
+  usb_host host;
 };
 
 struct _GstUsbSinkClass 

@@ -9,8 +9,10 @@
 #endif
 
 #include <gst/gst.h>
+#include <glib.h>
 
 #include "gstusbsink.h"
+
 
 GST_DEBUG_CATEGORY_STATIC (gst_usb_sink_debug);
 #define GST_CAT_DEFAULT gst_usb_sink_debug
@@ -106,6 +108,7 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_usb_sink_start);
   gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_usb_sink_stop);	
   gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_usb_sink_event);	  
+
 }
 
 /* initialize the new element
@@ -185,19 +188,34 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *sink,
   return GST_FLOW_OK;
 }
 
-static gboolean gst_usb_sink_start (GstBaseSink *sink)
+static gboolean gst_usb_sink_start (GstBaseSink *bs)
 {
   /* TODO:
   * Init usb device here!
   */
+  GstUsbSink *s = GST_USB_SINK (bs); 
+  
+  /* Init usb context */
+  if (usb_host_new(&(s->host), LEVEL3) != EOK)
+  {
+	GST_WARNING("Failed opening usb context!");
+    return FALSE;
+  }
+  GST_WARNING("Success opening usb context.");
   return TRUE;
+	
 }
 
-static gboolean gst_usb_sink_stop (GstBaseSink *sink)
+static gboolean gst_usb_sink_stop (GstBaseSink *bs)
 {
   /* TODO:
    * Free usb device here!
    */
+  GstUsbSink *s = GST_USB_SINK (bs); 
+  
+  /* Init usb context */
+  GST_WARNING("Closing usb device.");
+  usb_host_free(&(s->host));
   return TRUE;
 }
 
