@@ -8,8 +8,8 @@ usbstring.c usbstring.h \
 usbhost.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
-libgstusb_la_CFLAGS = $(GST_CFLAGS)
-libgstusb_la_LIBADD = $(GST_LIBS)
+libgstusb_la_CFLAGS = $(GST_CFLAGS) $(LIBUSB_CFLAGS)
+libgstusb_la_LIBADD = $(GST_LIBS) $(LIBUSB_LIBS)
 libgstusb_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstusb_la_LIBTOOLFLAGS = --tag=disable-static
 
