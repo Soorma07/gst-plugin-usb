@@ -5,7 +5,7 @@
  * Copyright (C) 2011 RidgeRun
  */
 
-#include </home/mgruner/ti-dvsdk_dm3730-evm_4_02_00_06/linux-devkit/arm-none-linux-gnueabi/usr/include/libusb-1.0/libusb.h>
+#include <libusb.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -64,9 +64,6 @@ typedef struct _usb_host
   /** Pointer to a libusb context */	
   libusb_context *ctx;
   
-  /** Pointer to a libusb device */
-  libusb_device *dev;
-  
   /** Pointer to a libusb device handle */
   libusb_device_handle *devh;
   
@@ -87,9 +84,13 @@ extern int usb_host_new(usb_host *host, VERBOSE v);
  /**
   * \brief Method to open the desired device.
   * \param host Object in wich the desired device will be opened.
+  * \param vendor_id Vendor ID of the device to be opened.
+  * \param product_id Product ID of the device to be opened.
   * \return Code with the return status.
   */ //TODO: add a description field
-extern int usb_host_device_open(usb_host *host);
+extern int usb_host_device_open(usb_host *host, 
+								uint16_t vendor_id,
+								uint16_t product_id);
 
 /**
  * \brief Method to transfer data bulk data.

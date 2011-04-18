@@ -33,39 +33,17 @@ int usb_host_new(usb_host *host, VERBOSE v)
   return EOK;
 }
 
-int usb_host_device_open(usb_host *host)
+int usb_host_device_open(usb_host *host, uint16_t vendor_id,
+						uint16_t product_id)
 {
-  libusb_device **list;
+	
+  host->devh = libusb_open_device_with_vid_pid(host->ctx,
+											   vendor_id,
+											   product_id);
+  if (host->devh == NULL)
+    return ERR_OPEN;			
   
-  /* Generate a list with all the conected devices */
-  ssize_t cnt = libusb_get_device_list(NULL, &list);
-  ssize_t i = 0;
-  
-  if (cnt < 0)
-  {
-	return ERR_FOUND;  
-  }
-  
-  for (i = 0; i < cnt; i++) 
-  {
-    libusb_device *device = list[i];
-    if (0/*Add desired function*/) 
-	{
-      host->dev = device;
-      break;
-    }
-  }
-  
-  if (host->dev) 
-  {
-    if ( libusb_open(host->dev, &(host->devh)) )
-    {
-	  return ERR_FOUND;    
-    }
-  }
-
-  libusb_free_device_list(list, 1);	
-  return EOK;  
+  return EOK;								   
 }
 
 int usb_host_device_transfer(usb_host *host, 
