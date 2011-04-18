@@ -67,6 +67,7 @@ int usb_host_device_transfer(usb_host *host,
 
 void usb_host_free(usb_host *device)
 {
+  libusb_close (device->devh);	
   libusb_exit (device->ctx);
 }
 
