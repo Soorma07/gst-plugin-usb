@@ -188,12 +188,16 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *sink,
   return GST_FLOW_OK;
 }
 
+#define TIMEOUT 10
+
 static gboolean gst_usb_sink_start (GstBaseSink *bs)
 {
   /* TODO:
   * Init usb device here!
   */
   GstUsbSink *s = GST_USB_SINK (bs); 
+  int i;
+  
   
   /* Init usb context */
   if (usb_host_new(&(s->host), LEVEL3) != EOK)
@@ -202,6 +206,22 @@ static gboolean gst_usb_sink_start (GstBaseSink *bs)
     return FALSE;
   }
   GST_WARNING("Success opening usb context.");
+  
+  /* Give a little time to gadget to connect */
+  GST_WARNING("Waiting for usbsrc to conect");
+  for (;;)
+  {
+    /* Usb host object, vendor ID, product ID */
+    if (usb_host_device_open(&(s->host), 0x0525, 0xa4a4)==EOK)
+    {
+      GST_WARNING("Success opening usb device.");
+      goto success;	  
+    }
+  }
+  GST_WARNING("Error opening usb device!");
+  return FALSE;
+  
+success:  
   return TRUE;
 	
 }
