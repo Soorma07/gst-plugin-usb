@@ -17,7 +17,7 @@ typedef unsigned char EP;
 /**
  * Exit codes for error handling
  */
-typedef enum _EXIT_CODE
+typedef enum _HOST_EXIT_CODE
 {
   /** Everything ok */	
   EOK,
@@ -34,7 +34,7 @@ typedef enum _EXIT_CODE
   /** Error during transfer */
   ERR_TRANSFER
   
-} EXIT_CODE;
+} HOST_EXIT_CODE;
 
 /**
  * Levels of verbosity to implement.
