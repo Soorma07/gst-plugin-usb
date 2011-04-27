@@ -34,6 +34,7 @@ dnl
 PKG_CHECK_MODULES(GST, [
   gstreamer-0.10 >= $GST_REQUIRED
   gstreamer-base-0.10 >= $GST_REQUIRED
+  gstreamer-dataprotocol-0.10 >= $GST_REQUIRED
 ], [
   AC_SUBST(GST_CFLAGS)
   AC_SUBST(GST_LIBS)
@@ -46,6 +47,8 @@ PKG_CHECK_MODULES(GST, [
       or similar. The minimum version required is $GST_REQUIRED.
   ])
 ])
+
+
 
 PKG_CHECK_MODULES(LIBUSB, [
   libusb-1.0
