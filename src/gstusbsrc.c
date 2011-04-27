@@ -89,6 +89,8 @@ static void
 gst_usb_src_init (GstUsbSrc * src,
     GstUsbSrcClass * gclass)
 {
+  /* Initialize data protocol library */	
+  gst_dp_init();	
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 }
 
@@ -124,22 +126,43 @@ static gboolean
 gst_usb_src_start (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
-
   /*
    * TODO: start USB here!
    */
-
-  g_print("Initializing USB\n");
-  usbmain();
-  g_print("Success initializing USB\n");
-  return TRUE;
+   
+  switch (usb_gadget_new(&(s->gadget), GLEVEL2))
+  {
+    case ERR_GAD_DIR:
+	  GST_WARNING("Cannot work on /dev/gadget dir. Make sure it exists\
+	    and you have a gadgetfs mounted there.");
+	  return FALSE;
+	case ERR_OPEN_FD:
+	  GST_WARNING("Can't open gadget's file descriptor");
+	  return FALSE;
+	case ERR_NO_DEVICE:
+	  GST_WARNING("No asociated device found");  
+	  return FALSE;
+	case ERR_WRITE_FD:
+	  GST_WARNING("Can't write to file descriptor");
+	  return FALSE;
+	case SHORT_WRITE_FD:
+	  GST_WARNING("Short write in file descriptor, aborting...");
+	  return FALSE;
+	case GAD_EOK:
+	  GST_WARNING("Success initializing USB\n");
+	  return TRUE;
+    default:
+      GST_WARNING("Error initializing device\n");
+	  return FALSE;
+  }
 }
 
 static gboolean
 gst_usb_src_stop (GstBaseSrc * bs)
 {
-  GstUsbSrc *src = GST_USB_SRC (bs);
-
+  GstUsbSrc *s = GST_USB_SRC (bs);
+    
+  usb_gadget_free(&(s->gadget));
   return TRUE;
 }
 

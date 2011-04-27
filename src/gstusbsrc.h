@@ -7,6 +7,8 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstpushsrc.h>
+#include <gst/dataprotocol/dataprotocol.h>
+#include "driver.h"
 
 G_BEGIN_DECLS
 
@@ -31,6 +33,7 @@ struct _GstUsbSrc
    * TODO:
    * Add here my vars
    */
+   usb_gadget gadget;
 };
 
 struct _GstUsbSrcClass 
