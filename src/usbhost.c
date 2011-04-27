@@ -22,7 +22,7 @@
 
 #include "usbhost.h"
 
-int usb_host_new(usb_host *host, VERBOSE v)
+HOST_EXIT_CODE usb_host_new(usb_host *host, VERBOSE v)
 {
   if (libusb_init ( &(host->ctx) ) == 1)  /* 0 on success LIBUSB_ERROR on error */
   {
@@ -33,7 +33,7 @@ int usb_host_new(usb_host *host, VERBOSE v)
   return EOK;
 }
 
-int usb_host_device_open(usb_host *host, uint16_t vendor_id,
+HOST_EXIT_CODE usb_host_device_open(usb_host *host, uint16_t vendor_id,
 						uint16_t product_id)
 {
 	
@@ -46,14 +46,14 @@ int usb_host_device_open(usb_host *host, uint16_t vendor_id,
   return EOK;								   
 }
 
-int usb_host_device_transfer(usb_host *host, 
-								  EP stream, 
+HOST_EXIT_CODE usb_host_device_transfer(usb_host *host, 
+								  EP_ADRESS endp, 
 								  unsigned char *buffer,
 								  int length,
 								  unsigned int timeout)
 {
-  int r = libusb_bulk_transfer(host->devh, stream, buffer, 
-							   length, &(host->transferred),
+  int r = libusb_bulk_transfer(host->devh, (unsigned char) endp, 
+                               buffer, length, &(host->transferred),
 							   timeout);
 							   
   if (r != 0 && host->transferred != length)

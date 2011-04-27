@@ -9,10 +9,30 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+
 /**
- * Enpoint address.
+ * Endpoint addresses
  */
-typedef unsigned char EP;
+typedef enum _EP_ADDRESS
+{
+  /** Endpoint 1 configured for IN direcion */
+  EP1_IN  = 0x81,
+  
+  /** Endpoint 1 configured for OUT direcion */
+  EP1_OUT = 0x01,
+  
+  /** Endpoint 2 configured for IN direcion */
+  EP2_IN  = 0x82,
+  
+  /** Endpoint 2 configured for OUT direcion */
+  EP2_OUT = 0x02,
+  
+  /** Endpoint 3 configured for IN direcion */
+  EP3_IN  = 0x83,
+  
+  /** Endpoint 3 configured for OUT direcion */
+  EP3_OUT = 0x03,
+} EP_ADRESS;
 
 /**
  * Exit codes for error handling
@@ -78,7 +98,7 @@ typedef struct _usb_host
   * \param v Verbosity level of the context. See #_VERBOSE.
   * \return Code with the return status.
   */
-extern int usb_host_new(usb_host *host, VERBOSE v);
+extern HOST_EXIT_CODE usb_host_new(usb_host *host, VERBOSE v);
 
 
  /**
@@ -88,20 +108,21 @@ extern int usb_host_new(usb_host *host, VERBOSE v);
   * \param product_id Product ID of the device to be opened.
   * \return Code with the return status.
   */ //TODO: add a description field
-extern int usb_host_device_open(usb_host *host, 
+extern HOST_EXIT_CODE usb_host_device_open(usb_host *host, 
 								uint16_t vendor_id,
 								uint16_t product_id);
 
 /**
  * \brief Method to transfer data bulk data.
  * \param host Object that contains an opened device.
+ * \param endp Endpoint address to write to or read from.
  * \param buffer Buffer containing the data to transfer.
  * \param length Length of the data to transfer.
  * \param timeout Time in milliseconds to the transfer to give up.
  * \return Code with the transfer status.
  */
-extern int usb_host_device_transfer(usb_host *host, 
-								  EP stream, 
+extern HOST_EXIT_CODE usb_host_device_transfer(usb_host *host, 
+								  EP_ADRESS endp, 
 								  unsigned char *buffer,
 								  int length,
 								  unsigned int timeout);
