@@ -7,6 +7,8 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstbasesink.h>
+#include <gst/dataprotocol/dataprotocol.h>
+
 #include "usbhost.h"
 
 G_BEGIN_DECLS

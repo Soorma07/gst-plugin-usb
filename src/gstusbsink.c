@@ -9,7 +9,6 @@
 #endif
 
 #include <gst/gst.h>
-#include <glib.h>
 
 #include "gstusbsink.h"
 
@@ -120,6 +119,8 @@ static void
 gst_usb_sink_init (GstUsbSink * filter,
     GstUsbSinkClass * gclass)
 {
+  /* Initialize the data protocol library */	
+  gst_dp_init();	
   filter->silent = TRUE;
 }
 
@@ -178,13 +179,33 @@ gst_usb_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
   return TRUE;
 }
 
-static GstFlowReturn gst_usb_sink_render (GstBaseSink *sink, 
+static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs, 
 										  GstBuffer *buffer)
 {
   /* TODO:
   * Each received buffer will call this function.
   * Send this buffer across usb link
   */
+  GstUsbSink *s = GST_USB_SINK (bs);
+  GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
+  int length;
+  guint8 *header;
+  
+  gdp->header_from_buffer(buffer,
+                          GST_DP_HEADER_FLAG_NONE,
+			              &length,
+                          &header);
+									 
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) header,
+								  length,
+								  0) == ERR_TRANSFER)
+  {
+	gst_dp_packetizer_free (gdp);    
+    return GST_FLOW_ERROR;								  
+  }
+  gst_dp_packetizer_free (gdp); 
   return GST_FLOW_OK;
 }
 
@@ -195,9 +216,7 @@ static gboolean gst_usb_sink_start (GstBaseSink *bs)
   /* TODO:
   * Init usb device here!
   */
-  GstUsbSink *s = GST_USB_SINK (bs); 
-  int i;
-  
+  GstUsbSink *s = GST_USB_SINK (bs);   
   
   /* Init usb context */
   if (usb_host_new(&(s->host), LEVEL3) != EOK)
