@@ -104,9 +104,7 @@ static GADGET_EXIT_CODE autoconfig (usb_gadget *gadget)
 
 static void close_ep0 (void *param)
 {
-  int	status, fd;
-
-  fd = *(int *)param;
+  int fd = *(int *)param;
   if (close (fd) < 0)
     /* 
      * TODO: Find a way to pass error handling to GSTREAMER
@@ -186,12 +184,7 @@ ep_config (char *name, const char *label,
 			label, name, errno, strerror (errno));
 		close (fd);
 		return status;
-	} /*else if (verbose) {
-		unsigned long	id;
-
-		id = pthread_self ();
-		fprintf (stderr, "%s start %ld fd %d\n", label, id, fd);
-	}*/
+	} 
 	return fd;
 }
 
@@ -404,15 +397,10 @@ static void *simple_ev_down_thread (void *param)
 	return 0;
 }
 
-static void *(*stream_thread) (void *);
-static void *(*ev_up_thread) (void *);
-static void *(*ev_down_thread) (void *);
-static void *(*ep0_thread) (void *);
-
-
 static void start_io (usb_gadget *gadget)
 {
   sigset_t	allsig, oldsig;
+  int status; 
   
   /* Disable interrupts during transfers */
   sigfillset (&allsig);
@@ -426,15 +414,26 @@ static void start_io (usb_gadget *gadget)
    * from their controlling tty before pthread_create()?
    * why?  this clearly doesn't ...
    */
-  if (pthread_create (&(gadget->stream.thread), 0,
-            stream_thread, (void *) gadget) != 0)      
-  {
-	fprintf (stderr, "Unable to create stream thread\n");  
-    goto cleanup;
-  }
+  //~ if (pthread_create (&(gadget->stream.thread), 0,
+            //~ gadget->stream.func, (void *) gadget) != 0)      
+  //~ {
+	//~ fprintf (stderr, "Unable to create stream thread\n");  
+    //~ goto cleanup;
+  //~ }
+  
+  /* ***************************************/
+  status = stream_open (gadget->stream.NAME);
+  if (status < 0)
+    perror("stream fd open");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Stream file descriptor opened\n");
+  gadget->stream.fd = status;
+  gadget->connected=1;
+  /* ***************************************/    
   
   if (pthread_create (&(gadget->ev_up.thread), 0,
-            ev_up_thread, (void *) gadget) != 0) 
+            gadget->ev_up.func, (void *) gadget) != 0) 
   {
 	fprintf (stderr, "Unable to create upstream events thread\n"); 
 	/* Cancel already created thread */       
@@ -444,7 +443,7 @@ static void start_io (usb_gadget *gadget)
   }
 	
   if (pthread_create (&(gadget->ev_down.thread), 0,
-            ev_down_thread, (void *) gadget) != 0) 
+            gadget->ev_down.func, (void *) gadget) != 0) 
   {
     fprintf (stderr, "Unable to create downstream events thread\n");  
 	/* Cancel already created thread */
@@ -472,13 +471,25 @@ cleanup:
 static void stop_io (usb_gadget *gadget)
 {
   	
-  if (!pthread_equal (gadget->stream.thread, gadget->ep0.thread)) 
-  {
-    pthread_cancel (gadget->stream.thread);
-    if (pthread_join (gadget->stream.thread, 0) != 0)
-      fprintf(stderr, "Unable to join threads");   
-    gadget->stream.thread = gadget->ep0.thread;
-  }
+  //~ if (!pthread_equal (gadget->stream.thread, gadget->ep0.thread)) 
+  //~ {
+    //~ pthread_cancel (gadget->stream.thread);
+    //~ if (pthread_join (gadget->stream.thread, 0) != 0)
+      //~ fprintf(stderr, "Unable to join threads");   
+    //~ gadget->stream.thread = gadget->ep0.thread;
+  //~ }
+  
+  /* ***************************************************/
+  if (close (gadget->stream.fd) < 0)
+    /* 
+     * TODO: Find a way to pass error handling to GSTREAMER
+	 */
+    perror ("close");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Stream file descriptor closed\n");
+  gadget->connected=0;	  
+  /* ****************************************************/
 
   if (!pthread_equal (gadget->ev_up.thread, gadget->ep0.thread)) 
   {
@@ -747,8 +758,7 @@ static const char *speed (enum usb_device_speed s)
 static void *simple_ep0_thread (void *param)
 {
   usb_gadget *gadget = (usb_gadget*) param;
-  //int fd = *(int*) param;
-  int fd = gadget->ep0.fd;
+  int connected=0, fd = gadget->ep0.fd;
   int verbose = gadget->verbosity;
   struct pollfd	ep0_poll;
 
@@ -767,7 +777,6 @@ static void *simple_ep0_thread (void *param)
   {
     int tmp;
     struct usb_gadgetfs_event	event [NEVENT];
-    int	connected = 0;
     int	i, nevent;
 
     /* Use poll() to test that mechanism, to generate
@@ -817,10 +826,10 @@ static void *simple_ep0_thread (void *param)
           break;
         case GADGETFS_SETUP:
           connected = 1;
-          handle_control (gadget, &event [i].u.setup);
+		  handle_control (gadget, &event [i].u.setup);
           break;
         case GADGETFS_DISCONNECT:
-          connected = 0;
+	      connected = 0;
           current_speed = USB_SPEED_UNKNOWN;
           if (verbose)
             printf("DISCONNECT\n");
@@ -850,21 +859,13 @@ static void *simple_ep0_thread (void *param)
 
 GADGET_EXIT_CODE usb_gadget_new (usb_gadget *gadget, VERBOSITY v)
 {
-//  verbose = v;
-  gadget->verbosity = 3;
-  
-  stream_thread = simple_stream_thread;
+  gadget->verbosity = v;
   gadget->stream.func = simple_stream_thread;
-  
-  ev_up_thread = simple_ev_up_thread;
   gadget->ev_up.func = simple_ev_up_thread;
-  
-  ev_down_thread = simple_ev_down_thread;
   gadget->ev_down.func = simple_ev_down_thread;
-  
-  ep0_thread = simple_ep0_thread;
   gadget->ep0.func = simple_ep0_thread;
-
+  gadget->connected=0;
+  
   if (chdir ("/dev/gadget") < 0)
     return ERR_GAD_DIR;
 	
@@ -890,3 +891,28 @@ GADGET_EXIT_CODE usb_gadget_free (usb_gadget *gadget)
   return GAD_EOK;
 }
 
+int usb_gadget_transfer (usb_gadget *gadget, 
+                         unsigned char *buffer,
+						 int length)
+{
+  int  status;
+
+  int verbose = gadget->verbosity;
+
+	
+  errno = 0;
+  status = read (gadget->stream.fd, buffer, length);
+  if (status < 0)
+    return ERR_READ_FD;
+
+  if (status == 0) 
+  {
+    if (verbose)
+      printf ("Done %s\n", __FUNCTION__);
+  } else if (status < length) /* Test for short read */
+      return SHORT_READ_FD;
+	  
+  
+  /* Is it better to return the amount of bytes read? */
+  return GAD_EOK;
+}
