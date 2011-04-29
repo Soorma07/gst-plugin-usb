@@ -117,7 +117,7 @@ extern HOST_EXIT_CODE usb_host_device_open(usb_host *host,
  * \param host Object that contains an opened device.
  * \param endp Endpoint address to write to or read from.
  * \param buffer Buffer containing the data to transfer.
- * \param length Length of the data to transfer.
+ * \param length Length in bytes of the data to transfer.
  * \param timeout Time in milliseconds to the transfer to give up.
  * \return Code with the transfer status.
  */
