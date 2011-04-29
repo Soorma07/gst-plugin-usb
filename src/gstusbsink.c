@@ -9,7 +9,7 @@
 #endif
 
 #include <gst/gst.h>
-
+#include <string.h>
 #include "gstusbsink.h"
 
 
@@ -188,25 +188,46 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs,
   */
   GstUsbSink *s = GST_USB_SINK (bs);
   GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
-  int length;
-  guint8 *header;
+  guint *length; 
+  guint8 *header, ret = GST_FLOW_OK;
+  
+  
+  length = g_malloc(sizeof(guint));
   
   gdp->header_from_buffer(buffer,
                           GST_DP_HEADER_FLAG_NONE,
-			              &length,
+			              &length[0],
                           &header);
-									 
+  g_print("SINK: Buffer size %d\n", buffer->size);	
+ g_print("Sent size %d\n", length[0]);						  
+  /* Send as first byte the header size */
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) length,
+								  sizeof(guint),
+								  0) == ERR_TRANSFER)
+  {   
+    ret= GST_FLOW_ERROR;								  
+  }
+  
+  
+  
+  /* Now send the header */
+   									 
   if (usb_host_device_transfer(&(s->host), 
 								  EP2_OUT, 
 								  (unsigned char *) header,
-								  length,
+								  length[0],
 								  0) == ERR_TRANSFER)
-  {
-	gst_dp_packetizer_free (gdp);    
-    return GST_FLOW_ERROR;								  
+  {   
+    ret= GST_FLOW_ERROR;								  
   }
+  g_print("sink: %d\n", length[0]);
+  
+  g_free(header);
   gst_dp_packetizer_free (gdp); 
-  return GST_FLOW_OK;
+  
+  return ret;
 }
 
 #define TIMEOUT 10
@@ -219,7 +240,7 @@ static gboolean gst_usb_sink_start (GstBaseSink *bs)
   GstUsbSink *s = GST_USB_SINK (bs);   
   
   /* Init usb context */
-  if (usb_host_new(&(s->host), LEVEL3) != EOK)
+  if (usb_host_new(&(s->host), LEVEL0) != EOK)
   {
 	GST_WARNING("Failed opening usb context!");
     return FALSE;
@@ -227,7 +248,7 @@ static gboolean gst_usb_sink_start (GstBaseSink *bs)
   GST_WARNING("Success opening usb context.");
   
   /* Give a little time to gadget to connect */
-  GST_WARNING("Waiting for usbsrc to conect");
+  GST_WARNING("Waiting for usbsrc to connect");
   for (;;)
   {
     /* Usb host object, vendor ID, product ID */

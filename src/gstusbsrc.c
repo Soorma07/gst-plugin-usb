@@ -132,6 +132,8 @@ gst_usb_src_start (GstBaseSrc * bs)
    
   switch (usb_gadget_new(&(s->gadget), GLEVEL2))
   {
+	case GAD_EOK:
+	  break;  
     case ERR_GAD_DIR:
 	  GST_WARNING("Cannot work on /dev/gadget dir. Make sure it exists\
 	    and you have a gadgetfs mounted there.");
@@ -148,13 +150,17 @@ gst_usb_src_start (GstBaseSrc * bs)
 	case SHORT_WRITE_FD:
 	  GST_WARNING("Short write in file descriptor, aborting...");
 	  return FALSE;
-	case GAD_EOK:
-	  GST_WARNING("Success initializing USB\n");
-	  return TRUE;
     default:
       GST_WARNING("Error initializing device\n");
 	  return FALSE;
   }
+  
+  /* Poll for gadget connection */
+  GST_WARNING("Waiting for gadget to connect...");
+  while (s->gadget.connected != 1)
+    g_usleep(1000); /* Wait 1 milisecond */
+  GST_WARNING("Gadget connected!");	
+  return TRUE;
 }
 
 static gboolean
@@ -170,13 +176,54 @@ static GstFlowReturn
 gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
 {
   GstUsbSrc *s = GST_USB_SRC (ps);
-  
-  /* 
-   * TODO:
-   * This is only for running a test
-   */
-  *buf = gst_buffer_new_and_alloc (640*480*3); 
+  guint *size = g_malloc(sizeof(guint)), ret = GAD_EOK;
+  unsigned char *header = NULL;
 
+  
+  /* Ask for the size of the header */
+  if ( (ret = usb_gadget_transfer (&(s->gadget), 
+                                   (unsigned char *) size, 
+		  			               sizeof(guint)) ) == GAD_EOK )
+  {
+    g_print("src: %d\n", size[0]);				
+    /* Alocate memory for the header */
+    header = (void *) g_malloc(size[0]);
+    
+	/* Ask for the header */
+    if ( (ret = usb_gadget_transfer (&(s->gadget), 
+                         (unsigned char *) header, 
+    					    size[0])) == GAD_EOK)	
+	{												
+      /* Create the buffer using gst data protocol */
+	  g_print("src2: %d\n", header[0]);
+      *buf = gst_dp_buffer_from_header (size[0], header);
+	
+	  g_print("SRC: Buffer size %d\n", (*buf)->size);
+	  return GST_FLOW_OK;
+    }
+  }
+  
+  /* Free vectors */
+  if (header != NULL)
+    g_free(header);
+  g_free(size);
+  
+  switch (ret)
+  {
+    case ERR_OPEN_FD:
+      GST_WARNING("Error opening file descriptor for transfer");
+	  return GST_FLOW_ERROR;
+    case ERR_READ_FD:
+      GST_WARNING("Can't write to file descriptor");
+	  return GST_FLOW_ERROR;
+    case SHORT_READ_FD:
+      GST_WARNING("File descriptor short read, aborting.");
+	  return GST_FLOW_ERROR;
+	default:
+      break;	   
+  }	  
+
+  /* It should never reach here */
   return GST_FLOW_OK;
 }
 
@@ -184,50 +231,71 @@ static GstCaps *
 gst_usb_src_get_caps (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
-#if 0
-  /*
-   * TODO: get caps form usb link in here
-   */
-
-  GstXContext *xcontext;
-  gint width, height;
-
-  if ((!s->xcontext) && (!gst_ximage_src_open_display (s, s->display_name)))
-    return
-        gst_caps_copy (gst_pad_get_pad_template_caps (GST_BASE_SRC
-            (s)->srcpad));
-
-  if (!gst_ximage_src_recalc (s))
-    return
-        gst_caps_copy (gst_pad_get_pad_template_caps (GST_BASE_SRC
-            (s)->srcpad));
-
-  xcontext = s->xcontext;
-
-  width = xcontext->width;
-  height = xcontext->height;
-  if (s->endx > s->startx && s->endy > s->starty) {
-    /* this means user has put in values */
-    if (s->startx < xcontext->width && s->endx < xcontext->width &&
-        s->starty < xcontext->height && s->endy < xcontext->height) {
-      /* values are fine */
-      s->width = width = s->endx - s->startx;
-      s->height = height = s->endy - s->starty;
-    } else {
-      GST_WARNING
-          ("User put in co-ordinates overshooting the X resolution, setting to full screen");
-      s->startx = 0;
-      s->starty = 0;
-      s->endx = 0;
-      s->endy = 0;
-    }
-  } else {
-    GST_WARNING ("User put in bogus co-ordinates, setting to full screen");
-    s->startx = 0;
-    s->starty = 0;
-    s->endx = 0;
-    s->endy = 0;
+  GstCaps *caps;
+  guint8 *header, *payload;
+  guint *length = g_malloc(sizeof(guint)), paylength;
+  
+  g_free(length);
+  return NULL;
+  
+  /* Ask for the size of the header */
+  if ( usb_gadget_transfer (&(s->gadget), 
+                           (unsigned char *) length, 
+		  			       sizeof(guint)) != GAD_EOK)
+  {	
+	g_free(length);  		
+    return NULL;
   }
+  
+  /* Alocate memory for the header */
+  header = (void *) g_malloc(length[0]);
+    
+  /* Ask for the header */
+  if ( usb_gadget_transfer (&(s->gadget), 
+                           (unsigned char *) header, 
+  					       length[0]) != GAD_EOK)	
+  {	
+	g_free(length);
+	g_free(header);  											
+	return NULL;
+  }
+  
+  /* Check for the payload type to be a caps header */
+  if (*((guint16 *)(header+4)) != GST_DP_PAYLOAD_CAPS)
+  {
+	g_free(length);
+	g_free(header);  
+    return NULL;
+  }
+  
+  /* Get the size of the payload */
+  paylength = *((guint16 *)(header+6));
+  payload = g_malloc(paylength);
+  
+  /* Ask for the payload */
+  if ( usb_gadget_transfer (&(s->gadget), 
+                           (unsigned char *) payload, 
+  					       paylength) != GAD_EOK)
+  {
+	g_free(length);  
+	g_free(payload);
+	g_free(header);  
+    return NULL;
+  }
+  
+  /* Finally get caps from header and payload */
+  caps = gst_dp_caps_from_packet (length[0],
+                                  header,
+                                  payload);
+								  
+  /* Free allocated vectors */
+  g_free(length);  
+  g_free(payload);
+  g_free(header);  
+  return caps;								  
+  
+#if 0
+ 
   GST_DEBUG ("width = %d, height=%d", width, height);
   return gst_caps_new_simple ("video/x-raw-rgb",
       "bpp", G_TYPE_INT, xcontext->bpp,
@@ -241,8 +309,6 @@ gst_usb_src_get_caps (GstBaseSrc * bs)
       "framerate", GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1,
       "pixel-aspect-ratio", GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1,
       NULL);
-#else
-  return NULL;
 #endif
 }
 
