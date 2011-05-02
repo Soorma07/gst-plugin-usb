@@ -48,7 +48,7 @@ static void gst_usb_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static gboolean gst_usb_sink_set_caps 
     (GstBaseSink * bsink, GstCaps * caps);
-static GstCaps * gst_usb_sink_get_caps (GstBaseSink * bsink);
+//~ static GstCaps * gst_usb_sink_get_caps (GstBaseSink * bsink);
 static GstFlowReturn gst_usb_sink_render 
     (GstBaseSink *sink, GstBuffer *buffer);
 static gboolean gst_usb_sink_start (GstBaseSink *sink);
@@ -101,7 +101,7 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
 		  
   /* Using basesink class
    */
-  gstbasesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_get_caps);
+  //~ gstbasesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_get_caps);
   gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_usb_sink_set_caps);
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_usb_sink_render);
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_usb_sink_start);
@@ -158,24 +158,84 @@ gst_usb_sink_get_property (GObject * object, guint prop_id,
 
 /* GstElement vmethod implementations */
 
-static GstCaps *
-gst_usb_sink_get_caps (GstBaseSink * bsink)
-{
-  /* TODO:
-   * this function is called when asked for the caps of the sink.
-   * Ask here for the caps across the usb link.
-   */	
-  return NULL;
-}
+//~ static GstCaps *
+//~ gst_usb_sink_get_caps (GstBaseSink * bsink)
+//~ {
+  //~ /* TODO:
+   //~ * this function is called when asked for the caps of the sink.
+   //~ * Ask here for the caps across the usb link.
+   //~ */	
+  //~ return NULL;
+//~ }
 
 static gboolean
-gst_usb_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
+gst_usb_sink_set_caps (GstBaseSink * bs, GstCaps * caps)
 {
-  /* TODO:
-   * this function is called when the sink pad caps are being set.
-   * Set the caps of the usb src across usb link.
-   */
-
+  GstUsbSink *s = GST_USB_SINK (bs);
+  GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
+  guint8 *header, *payload;
+  guint *length, paylength;	
+  	
+  length = g_malloc(sizeof(guint));
+  
+  /* Make a package from the given caps */	
+  gdp->packet_from_caps(caps,
+                        GST_DP_HEADER_FLAG_NONE,
+                        &length[0],
+                        &header,
+                        &payload);
+  
+  /* Send the size of the header */
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) length,
+								  sizeof(guint),
+								  0) == ERR_TRANSFER)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  
+  /* Now send the header */
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) header,
+								  length[0],
+								  0) == ERR_TRANSFER)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  
+  /* Get the length of the payload */
+  //~ paylength = *((guint32 *)(header+6));
+  paylength = GST_READ_UINT32_BE(header+6);
+  
+  /* Send the payload */
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) payload,
+								  paylength,
+								  0) == ERR_TRANSFER)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  
+  g_free(length);
+  g_free(header);
+  g_free(payload);
+  gst_dp_packetizer_free (gdp);
+  GST_WARNING("Caps sent");
   return TRUE;
 }
 
@@ -189,8 +249,7 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs,
   GstUsbSink *s = GST_USB_SINK (bs);
   GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
   guint *length; 
-  guint8 *header, ret = GST_FLOW_OK;
-  
+  guint8 *header;
   
   length = g_malloc(sizeof(guint));
   
@@ -198,8 +257,7 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs,
                           GST_DP_HEADER_FLAG_NONE,
 			              &length[0],
                           &header);
-  g_print("SINK: Buffer size %d\n", buffer->size);	
- g_print("Sent size %d\n", length[0]);						  
+						  					  
   /* Send as first byte the header size */
   if (usb_host_device_transfer(&(s->host), 
 								  EP2_OUT, 
@@ -207,27 +265,42 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs,
 								  sizeof(guint),
 								  0) == ERR_TRANSFER)
   {   
-    ret= GST_FLOW_ERROR;								  
+    g_free(length);
+    g_free(header);
+    gst_dp_packetizer_free (gdp);
+	return GST_FLOW_ERROR;								  
   }
   
-  
-  
-  /* Now send the header */
-   									 
+  /* Now send the header */									 
   if (usb_host_device_transfer(&(s->host), 
 								  EP2_OUT, 
 								  (unsigned char *) header,
 								  length[0],
 								  0) == ERR_TRANSFER)
   {   
-    ret= GST_FLOW_ERROR;								  
+    g_free(length);
+    g_free(header);
+    gst_dp_packetizer_free (gdp);
+	return GST_FLOW_ERROR;								  
   }
-  g_print("sink: %d\n", length[0]);
   
+  /* Now send the buffer */									 
+  if (usb_host_device_transfer(&(s->host), 
+								  EP2_OUT, 
+								  (unsigned char *) buffer->data,
+								  buffer->size,
+								  0) == ERR_TRANSFER)
+  {   
+    g_free(length);
+    g_free(header);
+    gst_dp_packetizer_free (gdp);
+	return GST_FLOW_ERROR;								  
+  }
+  
+  g_free(length);
   g_free(header);
   gst_dp_packetizer_free (gdp); 
-  
-  return ret;
+  return GST_FLOW_OK;
 }
 
 #define TIMEOUT 10
