@@ -21,28 +21,37 @@ typedef enum _VERBOSITY
 typedef enum _GADGET_EXIT_CODE
 {
   /** Everything OK */	
-  GAD_EOK,	
+  GAD_EOK = 0,	
   
   /** Error changing to gadget directory */
-  ERR_GAD_DIR,
+  ERR_GAD_DIR = -1,
   
   /** Error creating thread */
-  ERR_THRD,
+  ERR_THRD = -2,
   
   /** Error joining thread */
-  ERR_JN_THRD,
+  ERR_JN_THRD = -3,
   
   /** Error opening file descriptor */
-  ERR_OPEN_FD,
+  ERR_OPEN_FD = -4,
   
   /** Error writing to file descriptor */
-  ERR_WRITE_FD,
+  ERR_WRITE_FD = -5,
+  
+  /** Error reading from file descriptor */
+  ERR_READ_FD = -6,
   
   /** File descriptor short write */
-  SHORT_WRITE_FD,
+  SHORT_WRITE_FD = -7,
+  
+  /** File descriptor short read */
+  SHORT_READ_FD = -8,
+  
+  /** Error closing file descriptor */
+  ERR_CLOSE_FD = -9,
   
   /** No device to configure */
-  ERR_NO_DEVICE,
+  ERR_NO_DEVICE = -10,
   	
 } GADGET_EXIT_CODE;
 
@@ -85,6 +94,9 @@ typedef struct _usb_gadget
   /** Device name */
   char *DEVNAME;
   
+  /** Flag indicating connection status */
+  int connected;
+  
   /** Level of verbosity of the execution */
   VERBOSITY verbosity;
   
@@ -100,5 +112,7 @@ extern GADGET_EXIT_CODE usb_gadget_new(usb_gadget *gadget, VERBOSITY v);
 
 extern GADGET_EXIT_CODE usb_gadget_free(usb_gadget *gadget);
 
-
+extern int usb_gadget_transfer (usb_gadget *gadget, 
+                                unsigned char *buffer, 
+								int length);
 #endif /* __DRIVER_H__ */
