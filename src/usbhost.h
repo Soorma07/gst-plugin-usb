@@ -8,7 +8,7 @@
 #include <libusb.h>
 #include <stdlib.h>
 #include <stdio.h>
-
+#include <pthread.h>
 
 /**
  * Endpoint addresses
@@ -31,7 +31,8 @@ typedef enum _EP_ADDRESS
   EP3_IN  = 0x83,
   
   /** Endpoint 3 configured for OUT direcion */
-  EP3_OUT = 0x03,
+  EP3_OUT = 0x03
+  
 } EP_ADRESS;
 
 /**
@@ -44,6 +45,9 @@ typedef enum _HOST_EXIT_CODE
   
   /** Error openind usb context */
   ERR_INIT,
+  
+  /** Error asociated with the interface*/
+  ERR_INTERFACE,
   
   /** Unable to find desired device */
   ERR_FOUND,
@@ -89,6 +93,12 @@ typedef struct _usb_host
   
   /** Integer used to store the amount of trasfered data */
   int transferred;
+  
+  /** Convenience integer showing connection status */
+  int connected;
+  
+  /** Upstream events thread to receive from usb link */
+  pthread_t up_events;
   
 } usb_host;
 
