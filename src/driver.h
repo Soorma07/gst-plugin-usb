@@ -1,6 +1,22 @@
 #ifndef __DRIVER_H__
 #define __DRIVER_H__
 
+/** 
+ * Endpoint adresses to write to
+ */
+typedef enum _GAD_EP_ADDRESS
+{
+  /** Streaming endpoint */
+  GAD_STREAM_EP,
+  
+  /** Upstream events */
+  GAD_UP_EP,
+  
+  /** Downstream events */
+  GAD_DOWN_EP
+  	
+} GAD_EP_ADDRESS;	  
+
 /**
  * Levels of verbosity to implement.
  */
@@ -112,7 +128,8 @@ extern GADGET_EXIT_CODE usb_gadget_new(usb_gadget *gadget, VERBOSITY v);
 
 extern GADGET_EXIT_CODE usb_gadget_free(usb_gadget *gadget);
 
-extern int usb_gadget_transfer (usb_gadget *gadget, 
+extern int usb_gadget_transfer (usb_gadget *gadget,
+                                GAD_EP_ADDRESS endp, 
                                 unsigned char *buffer, 
 								int length);
 #endif /* __DRIVER_H__ */
