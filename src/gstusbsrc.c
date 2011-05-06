@@ -8,9 +8,10 @@
 #endif
 
 #include <gst/gst.h>
+#include <pthread.h>
 
 #include "gstusbsrc.h"
-#include "driver.h"
+
 
 GST_DEBUG_CATEGORY_STATIC (gst_usb_src_debug);
 #define GST_CAT_DEFAULT gst_usb_src_debug
@@ -42,6 +43,10 @@ static GstFlowReturn gst_usb_src_create
 static gboolean gst_usb_src_start (GstBaseSrc * bs);
 static gboolean gst_usb_src_stop (GstBaseSrc * bs);
 
+void *gst_usb_src_down_event (void *src);	
+static void close_down_event(void *param);
+static gboolean gst_usb_src_send_caps(GstUsbSrc *s, GstCaps *caps);
+static GstCaps *gst_usb_src_receive_caps(GstUsbSrc *s);
 
 /* GObject vmethod implementations */
 
@@ -78,7 +83,7 @@ gst_usb_src_class_init (GstUsbSrcClass * klass)
   gobject_class->get_property = gst_usb_src_get_property;
   push_class->create = gst_usb_src_create;
   base_class->get_caps = gst_usb_src_get_caps;
-  base_class->set_caps = gst_usb_src_set_caps;
+  //~ base_class->set_caps = gst_usb_src_set_caps;
   base_class->start = gst_usb_src_start;
   base_class->stop = gst_usb_src_stop;
 }
@@ -86,19 +91,23 @@ gst_usb_src_class_init (GstUsbSrcClass * klass)
 /* initialize the new element
  */
 static void
-gst_usb_src_init (GstUsbSrc * src,
+gst_usb_src_init (GstUsbSrc * s,
     GstUsbSrcClass * gclass)
 {
   /* Initialize data protocol library */	
   gst_dp_init();	
-  gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
+  gst_base_src_set_live (GST_BASE_SRC (s), TRUE);
+  s->gadget = g_malloc(sizeof(usb_gadget));
+  s->caps=NULL;
+  s->emptycaps=TRUE;
+  s->busy=TRUE;
 }
 
 static void
 gst_usb_src_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstUsbSrc *src = GST_USB_SRC (object);
+  //~ GstUsbSrc *src = GST_USB_SRC (object);
 
   switch (prop_id) {
     default:
@@ -111,7 +120,7 @@ static void
 gst_usb_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstUsbSrc *src = GST_USB_SRC (object);
+  //~ GstUsbSrc *src = GST_USB_SRC (object);
 
   switch (prop_id) {
     default:
@@ -126,11 +135,9 @@ static gboolean
 gst_usb_src_start (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
-  /*
-   * TODO: start USB here!
-   */
+  guint *notification = g_malloc(sizeof(guint)); 
    
-  switch (usb_gadget_new(&(s->gadget), GLEVEL2))
+  switch (usb_gadget_new(s->gadget, GLEVEL2))
   {
 	case GAD_EOK:
 	  break;  
@@ -157,9 +164,33 @@ gst_usb_src_start (GstBaseSrc * bs)
   
   /* Poll for gadget connection */
   GST_WARNING("Waiting for gadget to connect...");
-  while (s->gadget.connected != 1)
+  while (s->gadget->connected != 1)
     g_usleep(1000); /* Wait 1 milisecond */
-  GST_WARNING("Gadget connected!");	
+  GST_WARNING("Gadget connected!");
+  
+  /* Send sink the connection notification */
+  notification[0] = GST_USB_CONNECTED;
+  GST_WARNING("Notifying sink of connection status");
+  if ( usb_gadget_transfer (s->gadget,
+                            GAD_UP_EP,   
+                            (unsigned char *) notification, 
+		  			        sizeof(guint)) != GAD_EOK)
+  {
+    g_free(notification);	  							
+    GST_WARNING("Error Establishing connection with sink");
+	return FALSE;
+  }		
+  g_free(notification);
+  
+  
+  /* Create a thread for downstream events */
+  if (pthread_create (&(s->gadget->ev_down.thread), NULL,
+	 (void *) gst_usb_src_down_event, (void *) bs) != 0)
+  {
+    GST_WARNING("Unable to create down events thread, aborting..");	  
+    return FALSE;
+  }	
+  s->busy = FALSE;
   return TRUE;
 }
 
@@ -168,53 +199,58 @@ gst_usb_src_stop (GstBaseSrc * bs)
 {
   GstUsbSrc *s = GST_USB_SRC (bs);
     
-  usb_gadget_free(&(s->gadget));
+  usb_gadget_free(s->gadget);
+  g_free(s->gadget);
   return TRUE;
 }
 
-#define printerr(ret) (switch(ret)\
-                       {
-						  case ERR_OPEN_FD:
-                            GST_WARNING("Error opening file descriptor for transfer");
-                            break;
-                          case ERR_READ_FD:
-                            GST_WARNING("Can't write to file descriptor");
-                            break;
-						  case SHORT_READ_FD:
-                            GST_WARNING("File descriptor short read, aborting.");
-	                        break;
-	                      default:
-                            break;	   
-                       })	   
+#define PRINTERR(ret) switch(ret) \
+                       { \
+						  case ERR_OPEN_FD:\
+                            GST_WARNING("Error opening file descriptor for transfer");\
+                            break;\
+                          case ERR_READ_FD:\
+                            GST_WARNING("Can't write to file descriptor");\
+                            break;\
+						  case SHORT_READ_FD:\
+                            GST_WARNING("File descriptor short read, aborting.");\
+	                        break;\
+	                      default:\
+                            break;\
+                       }	   
 					   
-
 static GstFlowReturn
 gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
 {
   GstUsbSrc *s = GST_USB_SRC (ps);
-  guint *size = g_malloc(sizeof(guint));
+  guint *size = g_malloc(sizeof(guint)), ret;
   unsigned char *header = NULL;
   guint8 *data;
 
-  
+  //~ s->connected=0;
+  g_print("Create in\n");
   /* Ask for the size of the header */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( (ret=usb_gadget_transfer (s->gadget,
+                                   GAD_STREAM_EP, 
                                    (unsigned char *) size, 
-		  			               sizeof(guint))  != GAD_EOK )
+		  			               sizeof(guint)))  != GAD_EOK )
   {	
     g_free(size);
+	PRINTERR(ret)
     return GST_FLOW_ERROR;
   }
   
   /* Alocate memory for the header */
     header = (void *) g_malloc(size[0]);
   /* Ask for the header */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( (ret=usb_gadget_transfer (s->gadget, 
+                                   GAD_STREAM_EP,  
                                   (unsigned char *) header, 
-    		        			    size[0]) != GAD_EOK)	
+    		        			    size[0])) != GAD_EOK)	
   {												
     g_free(size);
 	g_free(header);
+	PRINTERR(ret)
     return GST_FLOW_ERROR;
   }
 	
@@ -224,13 +260,15 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
   /* Now read the data */
   data = g_malloc((*buf)->size);
   /* Ask for the header */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( (ret=usb_gadget_transfer (s->gadget,
+                                   GAD_STREAM_EP,   
                                   (unsigned char *) data, 
-    		        			    (*buf)->size) != GAD_EOK)	
+    		        			    (*buf)->size)) != GAD_EOK)	
   {	
 	g_free(data);  											
     g_free(size);
 	g_free(header);
+	PRINTERR(ret)
 	gst_buffer_unref(*buf);
     return GST_FLOW_ERROR;
   }	
@@ -240,23 +278,8 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
   /* Free vectors */
   g_free(data);
   g_free(header);
-  g_free(size);
-  
-  /* Apply later! */
-  //~ switch (ret)
-  //~ {
-    //~ case ERR_OPEN_FD:
-      //~ GST_WARNING("Error opening file descriptor for transfer");
-	  //~ return GST_FLOW_ERROR;
-    //~ case ERR_READ_FD:
-      //~ GST_WARNING("Can't write to file descriptor");
-	  //~ return GST_FLOW_ERROR;
-    //~ case SHORT_READ_FD:
-      //~ GST_WARNING("File descriptor short read, aborting.");
-	  //~ return GST_FLOW_ERROR;
-	//~ default:
-      //~ break;	   
-  //~ }	  
+  //~ *buf = gst_buffer_new_and_alloc(640*480*3);
+  g_free(size); 
 
   return GST_FLOW_OK;
 }
@@ -264,47 +287,367 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
 static GstCaps *
 gst_usb_src_get_caps (GstBaseSrc * bs)
 {
+  GstUsbSrc *s = GST_USB_SRC (bs);  
+  
+  if(s->gadget->connected != 1)
+    return NULL;
+	
+  while (s->emptycaps)
+    g_usleep(1000);
+  
+  return s->caps;
+  #if 0
+  guint *notification = g_malloc(sizeof(guint));
+  notification[0]= GST_USB_GET_CAPS;
+  ////~ GstCaps *caps;
+  
+  if (s->gadget->connected != 1)
+    return NULL;
+	
+  /* Wait until gadget is free */
+  ////~ while (s->busy)
+    //~ g_usleep(1000);
+  //~ s->busy = TRUE;		 
+  
+  s->caps = NULL;	
+  if (usb_gadget_transfer(s->gadget, 
+						  GAD_UP_EP, 
+						  (unsigned char *) notification,
+						  sizeof(guint)) != GAD_EOK)
+  {   
+	g_free(notification);	
+	GST_WARNING("Error sending get caps notification");
+	//~ s->busy = FALSE;
+	return NULL;						  
+  } 
+  //~ caps = gst_usb_src_receive_caps(s);
+  //~ s->busy = FALSE;
+  /* Wait until up_events thread fills the caps */
+  while (s->caps == NULL)
+    g_usleep(1000);	
+  
+  GST_WARNING("Caps received");
+  
+  g_free(notification);	
+
+  return s->caps;
+ 
+  
+  return gst_usb_src_receive_caps(s); 	
+	 #endif
+  //~ GstUsbSrc *s = GST_USB_SRC (bs);
+  //~ GstCaps *caps;
+  //~ guint8 *header, *payload;
+  //~ guint *length = g_malloc(sizeof(guint)), paylength;
+  //~ 
+  //~ /* Wait unitl gadget is connected */
+  //~ if (s->gadget->connected != 1)
+  //~ {
+    //~ g_free(length);
+	//~ return NULL;
+  //~ }
+  //~ 
+  //~ /* Ask for the size of the header */
+  //~ if ( usb_gadget_transfer (s->gadget,
+                           //~ GAD_STREAM_EP,   
+                           //~ (unsigned char *) length, 
+		  			       //~ sizeof(guint)) != GAD_EOK)
+  //~ {	
+	//~ g_free(length);  		
+    //~ return NULL;
+  //~ }
+//~ 
+  //~ /* Alocate memory for the header */
+  //~ header = (void *) g_malloc(length[0]);
+    //~ 
+  //~ /* Ask for the header */
+  //~ if ( usb_gadget_transfer (s->gadget,
+                           //~ GAD_STREAM_EP,   
+                           //~ (unsigned char *) header, 
+  					       //~ length[0]) != GAD_EOK)	
+  //~ {	
+	//~ g_free(length);
+	//~ g_free(header);  											
+	//~ return NULL;
+  //~ }
+//~ 
+  //~ /* Check for the payload type to be a caps header */
+  //~ if (GST_READ_UINT16_BE(header+4) != GST_DP_PAYLOAD_CAPS)
+  //~ {
+	//~ GST_WARNING("Received header is not a cap's header");  
+	//~ g_free(length);
+	//~ g_free(header);  
+    //~ return NULL;
+  //~ }
+//~ 
+  //~ /* Get the size of the payload */
+  //~ paylength = GST_READ_UINT32_BE(header+6);
+  //~ payload = g_malloc(paylength);
+  //~ 
+  //~ /* Ask for the payload */
+  //~ if ( usb_gadget_transfer (s->gadget,
+                           //~ GAD_STREAM_EP,   
+                           //~ (unsigned char *) payload, 
+  					       //~ paylength) != GAD_EOK)
+  //~ {
+	//~ g_free(length);  
+	//~ g_free(payload);
+	//~ g_free(header);  
+    //~ return NULL;
+  //~ }
+  //~ 
+  //~ /* Finally get caps from header and payload */
+  //~ caps = gst_dp_caps_from_packet (length[0],
+                                  //~ header,
+                                  //~ payload);
+								  //~ 
+  //~ GST_WARNING("Succesfully received caps");
+  //~ /* Free allocated vectors */
+  //~ g_free(length);  
+  //~ g_free(payload);
+  //~ g_free(header);  
+  //~ return caps;								  
+  
+}
+
+static gboolean
+gst_usb_src_set_caps (GstBaseSrc * bs, GstCaps * caps)
+{
   GstUsbSrc *s = GST_USB_SRC (bs);
+
+  guint *notification = g_malloc(sizeof(guint)), ret=TRUE; 
+  notification[0] = GST_USB_SET_CAPS;
+  
+  if (s->gadget->connected != 1)
+    return FALSE;
+  GST_WARNING("Inside set caps");
+  /* Wait for gadget to be free*/
+  //~ while (s->busy)
+    //~ g_usleep(1000);
+  //~ s->busy = TRUE;
+  
+  if ( usb_gadget_transfer (s->gadget,
+                           GAD_UP_EP,   
+                           (unsigned char *) notification, 
+		  			       sizeof(guint)) != GAD_EOK)
+  {	
+	g_free(notification);
+	//~ s->busy = FALSE;  		
+    return FALSE;
+  }
+  ret = gst_usb_src_send_caps(s, caps);
+  
+  //~ s->busy = FALSE;
+  g_free(notification);
+  return ret;
+}
+
+/* Down events thread */
+void *gst_usb_src_down_event (void *src)
+{
+  GstBaseSrc *bs = (GstBaseSrc *)src;	
+  GstUsbSrc *s = GST_USB_SRC (bs);	
+  guint *notification = g_malloc(sizeof(guint));	
+  GstCaps *caps;
+  
+  pthread_cleanup_push (close_down_event, (void *) notification);
+  
+  while (TRUE)
+  {
+	/* Create a cancellation test point */  
+	pthread_testcancel();  
+	
+	g_print("src: Receiving notification\n");
+	//~ if (s->prueba)
+	  //~ continue;
+    /* Receive an event (internal polling) */
+    if (usb_gadget_transfer(s->gadget, 
+	  							  GAD_DOWN_EP, 
+		  						  (unsigned char *) notification,
+			  					  sizeof(guint)) != GAD_EOK)
+    { 
+      GST_WARNING("Error receving downstream event");
+	  //~ while (TRUE)
+	   //~ g_usleep(1000);
+	  continue;    							      
+    }
+	g_print("src: Oh noooooo\n");
+	/* Wait until gadget is free */
+	while (s->busy)
+      g_usleep(1000);	
+    s->busy = TRUE;
+    switch (notification[0])
+    { /* Sink is asking for our allowed caps */
+	  case GST_USB_GET_CAPS:
+	  {		  
+		notification[0] = GST_USB_CAPS;
+		g_print("src: Received a get caps\n");
+		if ( usb_gadget_transfer (s->gadget,
+                                 GAD_UP_EP,   
+                                 (unsigned char *) notification, 
+		  			             sizeof(guint)) != GAD_EOK)
+          GST_WARNING("Error returning caps");	
+
+		g_print("src: Returning my caps\n");
+		if (gst_pad_is_linked(GST_BASE_SRC_PAD(bs)))
+		  caps = gst_pad_peer_get_caps (GST_BASE_SRC_PAD(bs));
+		else
+		  caps = gst_caps_copy (gst_pad_get_pad_template_caps\
+		                       (GST_BASE_SRC_PAD(bs)));
+		if (caps == NULL)
+		  GST_WARNING("Caps are null");
+		else
+		  GST_WARNING("Caps are not null");					   
+		g_print("src: Found caps\n");					   
+	    if (!gst_usb_src_send_caps(s, caps))
+		  GST_WARNING("Error sending caps");
+		g_print("src: Caps sent\n");
+		gst_caps_unref(caps);
+		break;
+	  }
+	  /* Sink is sending a set of caps for src to set */
+	  case GST_USB_SET_CAPS:
+	    g_print("src: Received a set caps\n");
+	    s->caps = gst_usb_src_receive_caps(s);
+		//~ if (!gst_pad_set_caps(GST_BASE_SRC_PAD(bs),caps))
+		  //~ GST_WARNING("Unable to set received caps");
+		//~ gst_caps_unref(caps);  
+		s->emptycaps = FALSE;
+		g_print("src: Received caps" );
+		break;
+	  //~ /* Sink returned his possible caps */		
+	  //~ case GST_USB_CAPS:
+	    //~ g_print("src: Received a caps\n");
+	    //~ s->caps = gst_usb_src_receive_caps(s);
+		//~ break;	  
+	  default:
+	    GST_WARNING("Unknown downstream event");
+		break;	  
+    }
+	s->busy = FALSE;
+  }
+  /* It should never reach this point */
+  pthread_cleanup_pop (1);	 	  
+}	
+
+static void close_down_event(void *param)
+{
+  GST_WARNING("Closing down events thread");		
+  guint *notification = (guint *) param;	
+  g_free(notification);	
+}
+
+
+static gboolean gst_usb_src_send_caps(GstUsbSrc *s, GstCaps *caps)
+{
+  GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
+  guint8 *header, *payload;
+  guint *length, paylength;	
+  
+  length = g_malloc(sizeof(guint));
+
+  /* Make a package from the given caps */	
+  gdp->packet_from_caps(caps,
+                        GST_DP_HEADER_FLAG_NONE,
+                        &length[0],
+                        &header,
+                        &payload);
+  g_print("src: Inside send caps\n");
+  /* Send the size of the header */
+  if (usb_gadget_transfer(s->gadget, 
+						  GAD_UP_EP, 
+						  (unsigned char *) length,
+						  sizeof(guint)) != GAD_EOK)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  g_print("src: Sent length %d\n", length[0]);
+  /* Now send the header */
+  if (usb_gadget_transfer(s->gadget, 
+						  GAD_UP_EP, 
+						  (unsigned char *) header,
+						  length[0]) != GAD_EOK)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  
+  /* Get the length of the payload */
+  paylength = GST_READ_UINT32_BE(header+6);
+  g_print("src: Sent header with paylength %d\n", paylength);
+  /* Send the payload */
+  if (usb_gadget_transfer(s->gadget, 
+						  GAD_UP_EP, 
+						  (unsigned char *) payload,
+						  paylength) != GAD_EOK)
+  {   
+    g_free(length);
+    g_free(header);
+	g_free(payload);
+    gst_dp_packetizer_free (gdp);
+	return FALSE;								  
+  }
+  g_print("src: Sent payload %d\n", paylength);
+  g_free(length);
+  g_free(header);
+  g_free(payload);
+  gst_dp_packetizer_free (gdp);
+  return TRUE;
+}
+
+static GstCaps *gst_usb_src_receive_caps(GstUsbSrc *s)
+{
   GstCaps *caps;
   guint8 *header, *payload;
   guint *length = g_malloc(sizeof(guint)), paylength;
   
   /* Wait unitl gadget is connected */
-  if (s->gadget.connected != 1)
+  if (s->gadget->connected != 1)
   {
     g_free(length);
-	return NULL;
+	return FALSE;
   }
   
   /* Ask for the size of the header */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( usb_gadget_transfer (s->gadget,
+                           GAD_DOWN_EP,   
                            (unsigned char *) length, 
 		  			       sizeof(guint)) != GAD_EOK)
   {	
 	g_free(length);  		
-    return NULL;
+    return FALSE;
   }
+
+  g_print("Received size of header %d\n", length[0]);
 
   /* Alocate memory for the header */
   header = (void *) g_malloc(length[0]);
     
   /* Ask for the header */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( usb_gadget_transfer (s->gadget,
+                           GAD_DOWN_EP,   
                            (unsigned char *) header, 
   					       length[0]) != GAD_EOK)	
   {	
 	g_free(length);
 	g_free(header);  											
-	return NULL;
+	return FALSE;
   }
 
   /* Check for the payload type to be a caps header */
   if (GST_READ_UINT16_BE(header+4) != GST_DP_PAYLOAD_CAPS)
   {
-	GST_WARNING("Received header is not cap's header");  
+	GST_WARNING("Received header is not a cap's header");  
 	g_free(length);
 	g_free(header);  
-    return NULL;
+    return FALSE;
   }
 
   /* Get the size of the payload */
@@ -312,14 +655,15 @@ gst_usb_src_get_caps (GstBaseSrc * bs)
   payload = g_malloc(paylength);
   
   /* Ask for the payload */
-  if ( usb_gadget_transfer (&(s->gadget), 
+  if ( usb_gadget_transfer (s->gadget,
+                           GAD_DOWN_EP, 
                            (unsigned char *) payload, 
   					       paylength) != GAD_EOK)
   {
 	g_free(length);  
 	g_free(payload);
 	g_free(header);  
-    return NULL;
+    return FALSE;
   }
   
   /* Finally get caps from header and payload */
@@ -332,50 +676,6 @@ gst_usb_src_get_caps (GstBaseSrc * bs)
   g_free(length);  
   g_free(payload);
   g_free(header);  
-  return caps;								  
   
-#if 0
- 
-  GST_DEBUG ("width = %d, height=%d", width, height);
-  return gst_caps_new_simple ("video/x-raw-rgb",
-      "bpp", G_TYPE_INT, xcontext->bpp,
-      "depth", G_TYPE_INT, xcontext->depth,
-      "endianness", G_TYPE_INT, xcontext->endianness,
-      "red_mask", G_TYPE_INT, xcontext->r_mask_output,
-      "green_mask", G_TYPE_INT, xcontext->g_mask_output,
-      "blue_mask", G_TYPE_INT, xcontext->b_mask_output,
-      "width", G_TYPE_INT, width,
-      "height", G_TYPE_INT, height,
-      "framerate", GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1,
-      "pixel-aspect-ratio", GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1,
-      NULL);
-#endif
+  return caps;
 }
-
-static gboolean
-gst_usb_src_set_caps (GstBaseSrc * bs, GstCaps * caps)
-{
-  GstUsbSrc *s = GST_USB_SRC (bs);
-#if 0
-  GstStructure *structure;
-  const GValue *new_fps;
-
-  /* If not yet opened, disallow setcaps until later */
-  if (!s->xcontext)
-    return FALSE;
-
-  /* The only thing that can change is the framerate downstream wants */
-  structure = gst_caps_get_structure (caps, 0);
-  new_fps = gst_structure_get_value (structure, "framerate");
-  if (!new_fps)
-    return FALSE;
-
-  /* Store this FPS for use when generating buffers */
-  s->fps_n = gst_value_get_fraction_numerator (new_fps);
-  s->fps_d = gst_value_get_fraction_denominator (new_fps);
-
-  GST_DEBUG_OBJECT (s, "peer wants %d/%d fps", s->fps_n, s->fps_d);
-#endif
-  return TRUE;
-}
-

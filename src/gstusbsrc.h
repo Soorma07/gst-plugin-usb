@@ -9,6 +9,7 @@
 #include <gst/base/gstpushsrc.h>
 #include <gst/dataprotocol/dataprotocol.h>
 #include "driver.h"
+#include "gstusbmessages.h"
 
 G_BEGIN_DECLS
 
@@ -33,7 +34,13 @@ struct _GstUsbSrc
    * TODO:
    * Add here my vars
    */
-   usb_gadget gadget;
+   usb_gadget *gadget;
+   
+   GstCaps *caps;
+   gboolean emptycaps;
+   /* Boolean to block device when busy */
+   gboolean busy;
+
 };
 
 struct _GstUsbSrcClass 

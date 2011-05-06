@@ -10,6 +10,7 @@
 #include <gst/dataprotocol/dataprotocol.h>
 
 #include "usbhost.h"
+#include "gstusbmessages.h"
 
 G_BEGIN_DECLS
 
@@ -37,7 +38,15 @@ struct _GstUsbSink
 
   gboolean silent;
   
-  usb_host host;
+  usb_host *host;
+  
+  /* Used in get and set caps accross usb link */
+  GstCaps *caps;
+  gboolean emptycaps;
+  
+  /* Boolean to block device when busy */
+  gboolean busy;
+
 };
 
 struct _GstUsbSinkClass 
