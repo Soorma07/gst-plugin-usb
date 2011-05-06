@@ -29,7 +29,8 @@ HOST_EXIT_CODE usb_host_new(usb_host *host, VERBOSE v)
 	return ERR_INIT;
   }	
   libusb_set_debug (host->ctx, v); /* Set level of verbosity */
- 
+  host->connected = 0;
+  
   return EOK;
 }
 
@@ -42,6 +43,9 @@ HOST_EXIT_CODE usb_host_device_open(usb_host *host, uint16_t vendor_id,
 											   product_id);
   if (host->devh == NULL)
     return ERR_OPEN;			
+  
+  if (libusb_claim_interface (host->devh,0) != 0)
+    return ERR_INTERFACE; 	
   
   return EOK;								   
 }
@@ -67,6 +71,7 @@ HOST_EXIT_CODE usb_host_device_transfer(usb_host *host,
 
 void usb_host_free(usb_host *device)
 {
+  libusb_release_interface 	(device->devh, 0); 				
   libusb_close (device->devh);	
   libusb_exit (device->ctx);
 }
