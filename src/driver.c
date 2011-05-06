@@ -429,40 +429,58 @@ static void start_io (usb_gadget *gadget)
     if (gadget->verbosity > GLEVEL1)
 	  printf("Stream file descriptor opened\n");
   gadget->stream.fd = status;
-  gadget->connected=1;
   /* ***************************************/    
   
-  if (pthread_create (&(gadget->ev_up.thread), 0,
-            gadget->ev_up.func, (void *) gadget) != 0) 
-  {
-	fprintf (stderr, "Unable to create upstream events thread\n"); 
-	/* Cancel already created thread */       
-    pthread_cancel (gadget->stream.thread);
-    gadget->stream.thread = gadget->ep0.thread;
-    goto cleanup;
-  }
-	
-  if (pthread_create (&(gadget->ev_down.thread), 0,
-            gadget->ev_down.func, (void *) gadget) != 0) 
-  {
-    fprintf (stderr, "Unable to create downstream events thread\n");  
-	/* Cancel already created thread */
-    pthread_cancel (gadget->stream.thread);
-    pthread_cancel (gadget->ev_up.thread);
-    gadget->stream.thread = gadget->ep0.thread;
-    gadget->ev_up.thread = gadget->ep0.thread;
-    goto cleanup;
-  }
+  //~ if (pthread_create (&(gadget->ev_up.thread), 0,
+            //~ gadget->ev_up.func, (void *) gadget) != 0) 
+  //~ {
+	//~ fprintf (stderr, "Unable to create upstream events thread\n"); 
+	//~ /* Cancel already created thread */       
+    //~ pthread_cancel (gadget->stream.thread);
+    //~ gadget->stream.thread = gadget->ep0.thread;
+    //~ goto cleanup;
+  //~ }
+  
+  /* ***************************************/
+  status = ev_up_open (gadget->ev_up.NAME);
+  if (status < 0)
+    perror("upstream events fd open");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Up events file descriptor opened\n");
+  gadget->ev_up.fd = status;
+  /* ***************************************/
+	//~ 
+  //~ if (pthread_create (&(gadget->ev_down.thread), 0,
+            //~ gadget->ev_down.func, (void *) gadget) != 0) 
+  //~ {
+    //~ fprintf (stderr, "Unable to create downstream events thread\n");  
+	//~ /* Cancel already created thread */
+    //~ pthread_cancel (gadget->stream.thread);
+    //~ pthread_cancel (gadget->ev_up.thread);
+    //~ gadget->stream.thread = gadget->ep0.thread;
+    //~ gadget->ev_up.thread = gadget->ep0.thread;
+    //~ goto cleanup;
+  //~ }
+  
+  /* ***************************************/
+  status = ev_down_open (gadget->ev_down.NAME);
+  if (status < 0)
+    perror("downstream events fd open");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Down events file descriptor opened\n");
+  gadget->ev_down.fd = status;
+  gadget->connected=1;
+  /* ***************************************/
 
-  /* give the other threads a chance to run before we report
-   * success to the host.
-   * FIXME better yet, use pthread_cond_timedwait() and
-   * synchronize on ep config success.
-   */
-  sched_yield ();
+  //~ /* give the other threads a chance to run before we report
+   //~ * success to the host.
+   //~ * FIXME better yet, use pthread_cond_timedwait() and
+   //~ * synchronize on ep config success.
+   //~ */
+  //~ sched_yield ();
 
-
-cleanup:
   errno = pthread_sigmask (SIG_SETMASK, &oldsig, 0);
   if (errno != 0) 
     perror("sigmask");
@@ -487,25 +505,47 @@ static void stop_io (usb_gadget *gadget)
     perror ("close");
   else
     if (gadget->verbosity > GLEVEL1)
-	  printf("Stream file descriptor closed\n");
-  gadget->connected=0;	  
+	  printf("Stream file descriptor closed\n");  
   /* ****************************************************/
 
-  if (!pthread_equal (gadget->ev_up.thread, gadget->ep0.thread)) 
-  {
-    pthread_cancel (gadget->ev_up.thread);
-    if (pthread_join (gadget->ev_up.thread, 0) != 0)
-      fprintf(stderr, "Unable to join threads");
-    gadget->ev_up.thread = gadget->ep0.thread;
-  }
-	
-  if (!pthread_equal (gadget->ev_down.thread, gadget->ep0.thread)) 
-  {
-    pthread_cancel (gadget->ev_down.thread);
-    if (pthread_join (gadget->ev_down.thread, 0) != 0)
-      fprintf(stderr, "Unable to join threads");
-    gadget->ev_down.thread = gadget->ep0.thread;
-  }
+  //~ if (!pthread_equal (gadget->ev_up.thread, gadget->ep0.thread)) 
+  //~ {
+    //~ pthread_cancel (gadget->ev_up.thread);
+    //~ if (pthread_join (gadget->ev_up.thread, 0) != 0)
+      //~ fprintf(stderr, "Unable to join threads");
+    //~ gadget->ev_up.thread = gadget->ep0.thread;
+  //~ }
+  
+  /* ***************************************************/
+  if (close (gadget->ev_up.fd) < 0)
+    /* 
+     * TODO: Find a way to pass error handling to GSTREAMER
+	 */
+    perror ("close");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Upstream events file descriptor closed\n");  
+  /* ****************************************************/
+	//~ 
+  //~ if (!pthread_equal (gadget->ev_down.thread, gadget->ep0.thread)) 
+  //~ {
+    //~ pthread_cancel (gadget->ev_down.thread);
+    //~ if (pthread_join (gadget->ev_down.thread, 0) != 0)
+      //~ fprintf(stderr, "Unable to join threads");
+    //~ gadget->ev_down.thread = gadget->ep0.thread;
+  //~ }
+  
+  /* ***************************************************/
+  if (close (gadget->ev_down.fd) < 0)
+    /* 
+     * TODO: Find a way to pass error handling to GSTREAMER
+	 */
+    perror ("close");
+  else
+    if (gadget->verbosity > GLEVEL1)
+	  printf("Downstream events file descriptor closed\n");  
+  /* ****************************************************/
+  gadget->connected=0;	
 }
 
 /*-------------------------------------------------------------------------*/
@@ -701,7 +741,12 @@ static void handle_control (usb_gadget *gadget, struct usb_ctrlrequest *setup)
       if (ioctl (gadget->ev_up.fd, GADGETFS_CLEAR_HALT) < 0) 
       {
         status = errno;
-        perror ("reset sink fd");
+        perror ("reset up events fd");
+      }
+	  if (ioctl (gadget->ev_down.fd, GADGETFS_CLEAR_HALT) < 0) 
+      {
+        status = errno;
+        perror ("reset down events fd");
       }
       /* FIXME eventually reset the status endpoint too */
       if (status)
@@ -892,6 +937,7 @@ GADGET_EXIT_CODE usb_gadget_free (usb_gadget *gadget)
 }
 
 int usb_gadget_transfer (usb_gadget *gadget, 
+				         GAD_EP_ADDRESS endp,
                          unsigned char *buffer,
 						 int length)
 {
@@ -899,11 +945,27 @@ int usb_gadget_transfer (usb_gadget *gadget,
 
   int verbose = gadget->verbosity;
 
-	
   errno = 0;
-  status = read (gadget->stream.fd, buffer, length);
-  if (status < 0)
-    return ERR_READ_FD;
+  switch (endp)
+  {
+    case GAD_STREAM_EP:
+	  status = read (gadget->stream.fd, buffer, length);
+      if (status < 0)
+        return ERR_READ_FD;
+	  break;
+	case GAD_DOWN_EP:
+	  status = read (gadget->ev_down.fd, buffer, length);
+      if (status < 0)
+        return ERR_READ_FD;
+	  break; 
+	case GAD_UP_EP:
+	  status = write (gadget->ev_up.fd, buffer, length);
+      if (status < 0)
+        return ERR_WRITE_FD;
+	  break;      
+	default:
+	  return ERR_NO_DEVICE;  	  
+  }	  	
 
   if (status == 0) 
   {
