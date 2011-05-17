@@ -44,7 +44,7 @@ struct _GstUsbSink
   GstCaps *caps;
   gboolean emptycaps;
   
-  /* Boolean to block device when busy */
+  /* Boolean to block device then busy */
   gboolean busy;
 
 };
