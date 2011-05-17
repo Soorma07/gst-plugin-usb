@@ -16,7 +16,10 @@ typedef enum _GST_USB_MESSAGE
   GST_USB_CAPS,
   
   /** Remote device has succesfully connected */
-  GST_USB_CONNECTED
+  GST_USB_CONNECTED,
+  
+  /** Remote device is sending an event */
+  GST_USB_EVENT
   	
 } GST_USB_MESSAGE;	  
 
