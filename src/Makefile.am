@@ -8,8 +8,7 @@ gstusbsrc.c gstusbsrc.h \
 usbgadget.c usbgadget.h \
 usbstring.c usbstring.h \
 usbhost.c usbhost.h \
-usbgadget_descriptors.h\
-gstusbclock.c gstusbclock.h
+usbgadget_descriptors.h
 
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
@@ -20,7 +19,7 @@ libgstusb_la_LIBTOOLFLAGS = --tag=disable-static
 
 # headers we need but don't want installed
 noinst_HEADERS = gstusbsrc.h gstusbsink.h usbstring.h usbhost.h usbgadget.h\
- usbgadget_descriptors.h gstusbclock.h
+ usbgadget_descriptors.h
 EXTRA_DIST = *.cfg
 
 #################################################

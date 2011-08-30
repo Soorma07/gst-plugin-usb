@@ -11,7 +11,6 @@
 
 #include "usbhost.h"
 #include "gstusbmessages.h"
-#include "gstusbclock.h"
 
 G_BEGIN_DECLS
 

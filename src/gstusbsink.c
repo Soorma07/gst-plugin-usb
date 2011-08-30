@@ -367,7 +367,7 @@ success:
 static gboolean gst_usb_sink_stop (GstBaseSink *bs)
 {
   GstUsbSink *s = GST_USB_SINK (bs); 
-  g_print("%d\n",LIBUSB_ERROR_NO_MEM);
+
   /* Init usb context */
   GST_DEBUG_OBJECT(s, "Closing usb device");
   /* Cancel main events thread */
