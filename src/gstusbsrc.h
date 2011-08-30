@@ -8,7 +8,7 @@
 #include <gst/gst.h>
 #include <gst/base/gstpushsrc.h>
 #include <gst/dataprotocol/dataprotocol.h>
-#include "driver.h"
+#include "usbgadget.h"
 #include "gstusbmessages.h"
 
 G_BEGIN_DECLS
@@ -30,17 +30,11 @@ typedef struct _GstUsbSrcClass GstUsbSrcClass;
 struct _GstUsbSrc
 {
   GstPushSrc parent;
-  /* 
-   * TODO:
-   * Add here my vars
-   */
-   usb_gadget *gadget;
-   
-   GstCaps *caps;
-   gboolean emptycaps;
-   /* Boolean to block device when busy */
-   gboolean busy;
+  usb_gadget *gadget;
+  gboolean play;
 
+  /* block device when busy */
+  GMutex  *state_lock;
 };
 
 struct _GstUsbSrcClass 

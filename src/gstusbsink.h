@@ -11,6 +11,7 @@
 
 #include "usbhost.h"
 #include "gstusbmessages.h"
+#include "gstusbclock.h"
 
 G_BEGIN_DECLS
 
@@ -31,12 +32,9 @@ typedef struct _GstUsbSinkClass GstUsbSinkClass;
 struct _GstUsbSink
 {
   GstBaseSink parent;
-  /*
-   * TODO:
-   * Add my vars
-   */
 
-  gboolean silent;
+  /* Properties */
+  gboolean usbsync;
   
   usb_host *host;
   
@@ -44,9 +42,16 @@ struct _GstUsbSink
   GstCaps *caps;
   gboolean emptycaps;
   
-  /* Boolean to block device then busy */
-  gboolean busy;
+  /* Vars that aids sync */
+  gboolean play;
+  GstClockTimeDiff sync;
 
+  /* Lock to prevent the state to change while working */
+  GMutex *state_lock;
+
+  /* Clock implementation */
+  GstClock *provided_clock;
+  GstClockTime gadgetclock;
 };
 
 struct _GstUsbSinkClass 

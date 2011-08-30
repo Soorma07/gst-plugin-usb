@@ -17,17 +17,18 @@
 GST_DEBUG_CATEGORY_STATIC (gst_usb_sink_debug);
 #define GST_CAT_DEFAULT gst_usb_sink_debug
 
-/* Filter signals and args */
-enum
-{
-  /* FILL ME */
-  LAST_SIGNAL
-};
+#define GST_USB_SINK_GET_STATE_LOCK(s) \
+  (GST_USB_SINK(s)->state_lock)
+#define GST_USB_SINK_STATE_LOCK(s) \
+  (g_mutex_lock(GST_USB_SINK_GET_STATE_LOCK(s)))
+#define GST_USB_SINK_STATE_UNLOCK(s) \
+  (g_mutex_unlock(GST_USB_SINK_GET_STATE_LOCK(s)))
+
 
 enum
 {
   PROP_0,
-  PROP_SILENT
+  PROP_USBSYNC
 };
 
 /* the capabilities of the inputs and outputs.
@@ -54,13 +55,15 @@ static GstFlowReturn gst_usb_sink_render
     (GstBaseSink *sink, GstBuffer *buffer);
 static gboolean gst_usb_sink_start (GstBaseSink *sink);
 static gboolean gst_usb_sink_stop (GstBaseSink *sink);
-static gboolean gst_usb_sink_event(GstBaseSink *sink, GstEvent *event);
+static GstStateChangeReturn gst_usb_sink_change_state (GstElement *
+    element, GstStateChange transition);
 
+/* Extra functions */
 void *gst_usb_sink_up_event (void *sink);	
 static void close_up_event(void *param);
 static GstCaps * gst_usb_sink_receive_caps(GstUsbSink *s);
 static gboolean gst_usb_sink_send_caps(GstUsbSink *s, GstCaps *caps);
-static GstEvent *gst_usb_sink_receive_event(GstUsbSink *s);
+
 
 /* GObject vmethod implementations */
 
@@ -99,9 +102,8 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
   gobject_class->set_property = gst_usb_sink_set_property;
   gobject_class->get_property = gst_usb_sink_get_property;
 
-  g_object_class_install_property (gobject_class, PROP_SILENT,
-      g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
-          FALSE, G_PARAM_READWRITE));
+  gstelement_class->change_state =
+    GST_DEBUG_FUNCPTR (gst_usb_sink_change_state);
 		  
   /* Using basesink class
    */
@@ -110,8 +112,10 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_usb_sink_render);
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_usb_sink_start);
   gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_usb_sink_stop);	
-  //~ gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_usb_sink_event);	  
 
+    g_object_class_install_property (gobject_class, PROP_USBSYNC,
+				     g_param_spec_boolean ("usbsync", "UsbSync", "Synchronize timestamps with src time",
+							   TRUE, G_PARAM_READWRITE));    
 }
 
 /* initialize the new element
@@ -122,15 +126,16 @@ gst_usb_sink_class_init (GstUsbSinkClass * klass)
 static void
 gst_usb_sink_init (GstUsbSink * s,
     GstUsbSinkClass * gclass)
-{
+{	
   /* Initialize the data protocol library */	
   gst_dp_init();	
-  s->silent = TRUE;
+  s->usbsync = TRUE;
 
+  s->play=FALSE;
   s->host = g_malloc(sizeof(usb_host));
   s->caps = NULL;
   s->emptycaps = TRUE;
-  s->busy = TRUE;
+  s->state_lock = g_mutex_new ();	  
 }
 
 static void
@@ -140,8 +145,8 @@ gst_usb_sink_set_property (GObject * object, guint prop_id,
   GstUsbSink *filter = GST_USB_SINK (object);
 
   switch (prop_id) {
-    case PROP_SILENT:
-      filter->silent = g_value_get_boolean (value);
+    case PROP_USBSYNC:
+      filter->usbsync = g_value_get_boolean (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -156,8 +161,8 @@ gst_usb_sink_get_property (GObject * object, guint prop_id,
   GstUsbSink *filter = GST_USB_SINK (object);
 
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean (value, filter->silent);
+    case PROP_USBSYNC:
+      g_value_set_boolean (value, filter->usbsync);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -173,38 +178,38 @@ gst_usb_sink_get_caps (GstBaseSink * bs)
   GstUsbSink *s = GST_USB_SINK (bs);  
   guint *notification = g_malloc(sizeof(guint));
 
+  /* If device is not connected try later */
   if (s->host->connected != 1)
     return NULL;
 		
   /* Wait for device to finish tasks */
-  while (s->busy)
-    g_usleep(1000);	
-  s->busy = TRUE;
+  GST_USB_SINK_STATE_LOCK(s);
   
   s->emptycaps = TRUE;
   notification[0] = GST_USB_GET_CAPS; /* Ask for src's caps */	 
   
   if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) notification,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
+			       EP1_OUT, 
+ 			       (unsigned char *) notification,
+		               sizeof(guint),
+			       0) == ERR_TRANSFER)
   {   
-	g_free(notification);	
-	GST_WARNING("Error sending get caps notification");
-	s->busy = FALSE;
-	return NULL;						  
+    g_free(notification);
+    GST_USB_SINK_STATE_UNLOCK(s);
+    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+    ("Error sending get caps notification"));
+    return NULL;						  
   } 
   
   g_free(notification);	
-  s->busy=FALSE;
+  GST_USB_SINK_STATE_UNLOCK(s);
  
-  GST_WARNING("Waiting for caps");
+  GST_DEBUG_OBJECT(s, "Waiting for caps");
   /* Wait until up_events thread fills the caps */
   while (s->emptycaps)
     g_usleep(1000);	
   
-  GST_WARNING("Caps received");
+  GST_DEBUG_OBJECT(s, "Caps received");
   
   return s->caps;
 }
@@ -213,161 +218,102 @@ static gboolean
 gst_usb_sink_set_caps (GstBaseSink * bs, GstCaps * caps)
 {
   GstUsbSink *s = GST_USB_SINK (bs);
-  guint *notification =	g_malloc(sizeof(guint)), ret=TRUE;
+  guint *notification =	g_malloc(sizeof(guint));
+  gboolean ret=TRUE;
   
+  /* If device is not connected try later */
   if (s->host->connected != 1)
     return FALSE;
   
   /* Wait for host to finish tasks */
-  while (s->busy)
-    g_usleep(1000);
-  s->busy = TRUE;
+  GST_USB_SINK_STATE_LOCK(s);
   
   /* Ask the src to set the following caps */
   notification[0] = GST_USB_SET_CAPS; 
 
   /* Notify that these caps are needed to be set */	
   if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) notification,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
+                               EP1_OUT, 
+                              (unsigned char *) notification,
+                               sizeof(guint),
+                               0) == ERR_TRANSFER)
   {   
-	g_free(notification);	
-	GST_WARNING("Error sending caps");
-	s->busy = FALSE;
-	return FALSE;						  
+    g_free(notification);
+    GST_USB_SINK_STATE_UNLOCK(s);
+    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+		      ("Error sending caps"));
+    return FALSE;						  
   } 
   
   ret = gst_usb_sink_send_caps(s, caps);
-  s->busy = FALSE;
+  GST_USB_SINK_STATE_UNLOCK(s);
 
   return TRUE;
 }
 
 static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs, 
-										  GstBuffer *buffer)
+					  GstBuffer *buffer)
 {
-  /* TODO:
-  * Each received buffer will call this function.
-  * Send this buffer across usb link
-  */
   GstUsbSink *s = GST_USB_SINK (bs);
   GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
-  guint *length, paylength; 
-  guint8 *header, *payload;
+  guint *length; 
+  guint8 *header;
   
-    //~ g_print("render\n");
+  /* Syncronize timestamps */
+  if (s->usbsync)
+    GST_BUFFER_TIMESTAMP(buffer) -= s->sync;
+  
+  /* Start transfer */  
   length = g_malloc(sizeof(guint));
-  
   gdp->header_from_buffer(buffer,
                           GST_DP_HEADER_FLAG_NONE,
-			              &length[0],
+			  &length[0],
                           &header);
-						  					  
+
   /* Send as first byte the header size */
   if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) length,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
-  {   
+                               EP2_OUT, 
+                              (unsigned char *) length,
+                               sizeof(guint),
+                               0) == ERR_TRANSFER)
+  {
     g_free(length);
     g_free(header);
     gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
+    return GST_FLOW_ERROR;								  
   }
-  
   /* Now send the header */									 
   if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) header,
-								  length[0],
-								  0) == ERR_TRANSFER)
+                               EP2_OUT, 
+                              (unsigned char *) header,
+                               length[0],
+                               0) == ERR_TRANSFER)
   {   
     g_free(length);
     g_free(header);
     gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
+    return GST_FLOW_ERROR;								  
   }
-  
   /* Now send the buffer */									 
   if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) buffer->data,
-								  buffer->size,
-								  0) == ERR_TRANSFER)
+                               EP2_OUT, 
+                              (unsigned char *) buffer->data,
+                               buffer->size,
+                               0) == ERR_TRANSFER)
   {   
     g_free(length);
     g_free(header);
     gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
+    return GST_FLOW_ERROR;								  
   }
-  
-  /* GDP doesn't send caps every transfer so send them manually */
-  g_free(header);
-  
-  /* Make a package from the given caps */	
-  gdp->packet_from_caps(buffer->caps,
-                        GST_DP_HEADER_FLAG_NONE,
-                        &length[0],
-                        &header,
-                        &payload);
-  
-  /* Send the size of the header */
-  if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) length,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
-  {   
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
-  }
-
-  /* Now send the header */
-  if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) header,
-								  length[0],
-								  0) == ERR_TRANSFER)
-  {   
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
-  }
-
-  /* Get the length of the payload */
-  paylength = GST_READ_UINT32_BE(header+6);
-  
-  /* Send the payload */
-  if (usb_host_device_transfer(s->host, 
-								  EP2_OUT, 
-								  (unsigned char *) payload,
-								  paylength,
-								  0) == ERR_TRANSFER)
-  {   
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	return GST_FLOW_ERROR;								  
-  }
-  
-  
   g_free(length);
   g_free(header);
-  g_free(payload);
   gst_dp_packetizer_free (gdp); 
-  
+
   return GST_FLOW_OK;
 }
 
+/* Use this to define a search timeout, currently there's no*/
 #define TIMEOUT 10
 
 static gboolean gst_usb_sink_start (GstBaseSink *bs)
@@ -375,41 +321,45 @@ static gboolean gst_usb_sink_start (GstBaseSink *bs)
   GstUsbSink *s = GST_USB_SINK (bs);   
 
   /* Init usb context */
-  if (usb_host_new(s->host, LEVEL0) != EOK)
+  if (usb_host_new(s->host, LEVEL3) != EOK)
   {
-	GST_WARNING("Failed opening usb context!");
+    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+            ("Failed opening usb context!"));
     return FALSE;
   }
-  GST_WARNING("Success opening usb context.");
+  GST_DEBUG_OBJECT(s, "Success opening usb context.");
   
   /* Give a little time to gadget to connect */
-  GST_WARNING("Searching for a gadget device");
+  GST_DEBUG_OBJECT(s, "Searching for a gadget device");
+  /* TODO: see if a timeout is required */
   for (;;)
   {
     /* Usb host object, vendor ID, product ID */
     if (usb_host_device_open(s->host, 0x0525, 0xa4a4)==EOK)
     {
-      GST_WARNING("Found a gadget device.");
+      GST_DEBUG_OBJECT(s, "Found a gadget device.");
       goto success;	  
     }
   }
-  GST_WARNING("Error opening usb device!");
+  GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+    ("Error opening usb device!"));
   return FALSE;
   
 success:  
-  s->busy = FALSE;
+  GST_USB_SINK_STATE_UNLOCK(s);
   /* Create the up events thread to receive connection form gadget */
   if (pthread_create (&(s->host->up_events), NULL,
 	 (void *) gst_usb_sink_up_event, (void *) bs) != 0)
   {
-    GST_WARNING("Unable to create up events thread, aborting..");	  
+    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+      ("Unable to create up events thread, aborting.."));	  
     return FALSE;
   }
   
   /* Waiting for the connected notification on the events thread*/
   while (s->host->connected != 1)
     g_usleep(1000); /* Wait a millisecond */
-  GST_WARNING("Connection stablished");
+  GST_DEBUG_OBJECT(s, "Connection stablished");
    	
   return TRUE;
 }
@@ -417,139 +367,15 @@ success:
 static gboolean gst_usb_sink_stop (GstBaseSink *bs)
 {
   GstUsbSink *s = GST_USB_SINK (bs); 
-  
+  g_print("%d\n",LIBUSB_ERROR_NO_MEM);
   /* Init usb context */
-  GST_WARNING("Closing usb device.");
+  GST_DEBUG_OBJECT(s, "Closing usb device");
   /* Cancel main events thread */
   pthread_cancel (s->host->up_events);
-  
   usb_host_free(s->host);
   g_free(s->host);
+
   return TRUE;
-}
-
-static gboolean gst_usb_sink_event (GstBaseSink *bs, GstEvent *event)
-{
-   /* Gstreamer is telling us to send the message */
-  GstUsbSink *s = GST_USB_SINK (bs); 
-  GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
-  guint8 *header, *payload;
-  guint *length = g_malloc(sizeof(guint)), paylength;	
-  guint *notification = g_malloc(sizeof(guint));
-
-
-  g_print("sink: Posted event");
-  
-  while (s->host->connected != 1)
-    g_usleep(1000);
-  //~ if (gst_pad_push_event (GST_BASE_SINK_PAD(bs), event))
-  //~ {
-    //~ GST_WARNING("Event not processed");
-    //~ g_free(length);
-	//~ g_free(notification);
-	//~ return FALSE;	  
-  //~ }	
- 
-   /*
-   * FIXME: found that some events gave problems to GDP.
-   * Found in source file that tag events were the problem.
-   */  
-  if (GST_EVENT_TYPE(event) == GST_EVENT_TAG)
-  {
-    GST_WARNING("Event not handled by GDP");
-    g_free(length);
-	g_free(notification);
-	return FALSE;	 
-  } 
-  
-  while (s->busy)
-    g_usleep(1000);
-  s->busy = TRUE;	
-  
-  notification[0] = GST_USB_EVENT;
-  if ( usb_host_device_transfer (s->host,
-                                EP1_OUT,   
-                                (unsigned char *) notification, 
-		  			            sizeof(guint),
-								0) == ERR_TRANSFER)
-  {
-	s->busy = FALSE;
-	g_free(length); 
-    g_free(notification);	  								
-    GST_WARNING("Error sending event");
-	return FALSE;
-  }	
-  g_free(notification);
-  
-  g_print("sink: Inside sending events\n");
-  
- 
-  /* Make a package from the given caps */	
-  gdp->packet_from_event(event,
-                        GST_DP_HEADER_FLAG_NONE,
-                        &length[0],
-                        &header,
-                        &payload);
-  
-  /* Send the size of the header */
-  if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) length,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
-  {
-	s->busy=FALSE;     
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	GST_WARNING("Error sending event");
-	return FALSE;								  
-  }
-  
-  /* Now send the header */
-  if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) header,
-								  length[0],
-								  0) == ERR_TRANSFER)
-  {   
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	GST_WARNING("Error sending event");
-	return FALSE;								  
-  }
-  g_print("sink: Sent header %d\n", length[0]);
-  
-  /* Get the length of the payload */
-  paylength = GST_READ_UINT32_BE(header+6);
-  
-  /* Send the payload */
-  if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) payload,
-								  paylength,
-								  0) == ERR_TRANSFER)
-  {   
-    g_free(length);
-    g_free(header);
-	g_free(payload);
-    gst_dp_packetizer_free (gdp);
-	GST_WARNING("Error sending event");
-	return FALSE;								  
-  }
-  g_print("sink: Sent payload %d\n", paylength);  
-  
-  s->busy = FALSE;
-  g_free(length);
-  g_free(header);
-  g_free(payload);
-  gst_dp_packetizer_free (gdp);
-  GST_WARNING("Event sent");
-  return TRUE;
-
 }
 
 
@@ -564,69 +390,49 @@ void *gst_usb_sink_up_event (void *sink)
   
   while (TRUE)
   {
-    //~ g_print("sink: Receiving notification\n");	  
-	  
-	/* Create a cancellation test point */  
-	pthread_testcancel();  
-	
+    /* Create a cancellation test point */  
+    pthread_testcancel();  
+    
     /* Receive an event (internal polling) */
-	/*
-	 *  FIXME: If there is no timeout process sleeps
-	 *  and blocks all other threads. Made a workaround
-	 *  setting timeout to 1 millisecond. Find a way to 
-	 *  fix this
-	 */
+    /*
+     *  FIXME: If there is no timeout process sleeps
+     *  and blocks all other threads. Made a workaround
+     *  setting timeout to 1 millisecond. Find a way to 
+     *  fix this
+     */
     if ((ret = usb_host_device_transfer(s->host, 
-	  							 EP1_IN, 
-		  						 (unsigned char *) notification,
-			  					 sizeof(guint),
-				  				 1)) == ERR_TRANSFER)
-    { 
-	  /* FIXME: it has received 5 bytes when timeout occurs*/	
-	  if (ret == 5)
-	    continue;	
-      GST_WARNING("Error receving upstream event");
-	  continue;    							      
+	  				EP1_IN, 
+		  			(unsigned char *) notification,
+			  		sizeof(guint),
+				  	1)) == ERR_TRANSFER){ 
+      continue;	
     }
-	/* Wait until device is free */
-	while (s->busy)
-      g_usleep(1000);	
-	s->busy = TRUE; 	
-    switch (notification[0])
-    { 	  
-	  /* Src is returning his possible caps */		
-	  case GST_USB_CAPS:
-	  	g_print("sink: Received a caps\n"); 
-	    s->caps = gst_usb_sink_receive_caps(s);
-		if (s->caps == NULL)
-		  GST_WARNING("Caps are null");
-		else
-		  GST_WARNING("Caps are not null");
-		GST_WARNING("Caps received from src");
-		s->emptycaps = FALSE;
-		break;
-	  /* Gadget has finished connecting */
-	  case GST_USB_CONNECTED:
-	    GST_WARNING("Received connection notice from src");
-		s->host->connected = 1;
-		break;	
-	  /* Sink is sending us an event */
-	  case GST_USB_EVENT:
-	  {
-		GstEvent *event;
-	    g_print("sink: Event received \n");
-		event = gst_usb_sink_receive_event(s);	
-		if (gst_pad_send_event (GST_BASE_SINK_PAD(bs),
-                                event))
-		  GST_WARNING("Error publishing event");
-		gst_event_unref(event);  
-		break;
-	  }			  	
-	  default:
-	    GST_WARNING("Unknown downstream event");
-		break;	  	
+    /* Wait until device is free */
+    GST_USB_SINK_STATE_LOCK(s);
+    switch (notification[0]){ 	  
+      /* Src is returning his possible caps */		
+    case GST_USB_CAPS:
+      GST_DEBUG_OBJECT(s, "Received a caps"); 
+      s->caps = gst_usb_sink_receive_caps(s);
+      GST_DEBUG_OBJECT(s, "Caps received from src");
+      s->emptycaps = FALSE;
+      break;
+      /* Gadget has finished connecting */
+    case GST_USB_CONNECTED:
+      GST_DEBUG_OBJECT(s, "Received connection notice from src");
+      s->host->connected = 1;
+      break;	
+      /* Gadget is ready to play */
+    case GST_USB_PLAY:
+      GST_DEBUG_OBJECT(s, "Received play notice from src");
+      s->play = TRUE;
+      break;	
+/*     TODO: Add the stop notification here if needed */
+    default:
+      GST_WARNING_OBJECT(s, "Unknown downstream event");
+      break;	  	
     }
-	s->busy = FALSE;
+    GST_USB_SINK_STATE_UNLOCK(s);
   }
   /* It should never reach this point */
   pthread_cleanup_pop (1);	 	  
@@ -634,9 +440,9 @@ void *gst_usb_sink_up_event (void *sink)
 
 static void close_up_event(void *param)
 {
-  GST_WARNING("Closing up events thread");	
+  GST_INFO("Closing up events thread");	
   guint *notification = (guint *) param;	
-  g_free(notification);	
+  g_free(notification);
 }
 
 static GstCaps* gst_usb_sink_receive_caps(GstUsbSink *s)
@@ -647,59 +453,53 @@ static GstCaps* gst_usb_sink_receive_caps(GstUsbSink *s)
   	
 	/* Ask for the size of the header */
   if ( usb_host_device_transfer (s->host,
-                           EP1_IN,   
-                           (unsigned char *) length, 
-		  			       sizeof(guint), 
-						   0) == ERR_TRANSFER)
-  {	
-	g_free(length);  		
+				 EP1_IN,   
+				 (unsigned char *) length, 
+				 sizeof(guint), 
+				 0) == ERR_TRANSFER){	
+    g_free(length);  		
     return NULL;
   }
 
-  g_print("sink: Received length %d\n", length[0]);
   /* Alocate memory for the header */
   header = (void *) g_malloc(length[0]);
     
   /* Ask for the header */
- if ( usb_host_device_transfer (s->host,
-                           EP1_IN,   
-                           (unsigned char *) header, 
-  					       length[0], 
-						   0) == ERR_TRANSFER)
-  {	
-	g_free(length);
-	g_free(header);  											
-	return NULL;
+  if ( usb_host_device_transfer (s->host,
+				 EP1_IN,   
+				 (unsigned char *) header, 
+				 length[0], 
+				 0) == ERR_TRANSFER){	
+    g_free(length);
+    g_free(header);  											
+    return NULL;
   }
   
 
   /* Check for the payload type to be a caps header */
-  if (GST_READ_UINT16_BE(header+4) != GST_DP_PAYLOAD_CAPS)
-  {
-	GST_WARNING("Received header is not a cap's header");  
-	g_free(length);
-	g_free(header);  
+  if (GST_READ_UINT16_BE(header+4) != GST_DP_PAYLOAD_CAPS){
+    GST_WARNING_OBJECT(s, "Received header is not a cap's header");  
+    g_free(length);
+    g_free(header);  
     return NULL;
   }
 
   /* Get the size of the payload */
   paylength = GST_READ_UINT32_BE(header+6);
   payload = g_malloc(paylength);
-  g_print("sink: Received header with paylength %d\n", paylength);
+
   /* Ask for the payload */
- if ( usb_host_device_transfer (s->host,
-                           EP1_IN,   
-                           (unsigned char *) payload, 
-  					       paylength, 
-						   0) == ERR_TRANSFER)
-  {
-	g_free(length);  
-	g_free(payload);
-	g_free(header);  
+  if ( usb_host_device_transfer (s->host,
+				 EP1_IN,   
+				 (unsigned char *) payload, 
+				 paylength, 
+				 0) == ERR_TRANSFER){
+    g_free(length);  
+    g_free(payload);
+    g_free(header);  
     return NULL;
   }
   
-  g_print("sink: Received payload\n");
   /* Finally get caps from header and payload */
   caps = gst_dp_caps_from_packet (length[0],
                                   header,
@@ -709,101 +509,14 @@ static GstCaps* gst_usb_sink_receive_caps(GstUsbSink *s)
   g_free(length);  
   g_free(payload);
   g_free(header);  
-  g_print("sink: Exit recevied caps\n");
   return caps;	
 } 
-
-static GstEvent *gst_usb_sink_receive_event(GstUsbSink *s)
-{
-  GstEvent *event;
-  guint8 *header, *payload;
-  guint *length = g_malloc(sizeof(guint)), paylength;
-  
-  /* Wait unitl gadget is connected */
-  if (s->host->connected != 1)
-  {
-    g_free(length);
-	return FALSE;
-  }
-  
-  /* Ask for the size of the header */
-  if ( usb_host_device_transfer (s->host,
-                                 EP1_IN,   
-                                (unsigned char *) length, 
-		  			             sizeof(guint),
-						         0) == ERR_TRANSFER)
-  {	
-	g_free(length);  		
-    return FALSE;
-  }
-
-  g_print("Received size of header %d\n", length[0]);
-
-  /* Alocate memory for the header */
-  header = (void *) g_malloc(length[0]);
-    
-  /* Ask for the header */
-  if ( usb_host_device_transfer (s->host,
-                                 EP1_IN,   
-                                (unsigned char *) header, 
-		  			             sizeof(guint),
-						         0) == ERR_TRANSFER)
-  {	
-	g_free(length);
-	g_free(header);  											
-	return FALSE;
-  }
-
-  /* Check for the payload type to be a caps header */
-  /* A different payload type is encoded starting from 
-   * GST_DP_PAYLOAD_EVENT_NONE=64. Ignore the rest of
-   * the bits to check for a generic event*/
-  if (GST_READ_UINT16_BE(header+4) < GST_DP_PAYLOAD_EVENT_NONE)
-  {
-	GST_WARNING("Received header is not a event's header");  
-	g_free(length);
-	g_free(header);  
-    return FALSE;
-  }
-
-  /* Get the size of the payload */
-  paylength = GST_READ_UINT32_BE(header+6);
-  payload = g_malloc(paylength);
-  
-  /* Ask for the payload */
-  if ( usb_host_device_transfer (s->host,
-                                 EP1_IN,   
-                                (unsigned char *) payload, 
-		  			             sizeof(guint),
-						         0) == ERR_TRANSFER)
-  {
-	g_free(length);  
-	g_free(payload);
-	g_free(header);  
-    return FALSE;
-  }
-  
-  /* Finally get caps from header and payload */
-  event = gst_dp_event_from_packet (length[0],
-                                  header,
-                                  payload);
-								  
-  GST_WARNING("Succesfully received event");
-  /* Free allocated vectors */
-  g_free(length);  
-  g_free(payload);
-  g_free(header);  
-  
-  return event;
-}
 
 static gboolean gst_usb_sink_send_caps(GstUsbSink *s, GstCaps *caps)
 {
   GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
   guint8 *header, *payload;
   guint *length = g_malloc(sizeof(guint)), paylength;	
-  
-  g_print("sink: Inside sending caps 1\n");
    
   /* Make a package from the given caps */	
   gdp->packet_from_caps(caps,
@@ -814,53 +527,85 @@ static gboolean gst_usb_sink_send_caps(GstUsbSink *s, GstCaps *caps)
   
   /* Send the size of the header */
   if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) length,
-								  sizeof(guint),
-								  0) == ERR_TRANSFER)
-  {   
+			       EP1_OUT, 
+			       (unsigned char *) length,
+			       sizeof(guint),
+			       0) == ERR_TRANSFER){   
     g_free(length);
     g_free(header);
-	g_free(payload);
+    g_free(payload);
     gst_dp_packetizer_free (gdp);
-	return FALSE;								  
+    return FALSE;								  
   }
-  g_print("sink: Sent header %d\n", length[0]);
+
   /* Now send the header */
   if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) header,
-								  length[0],
-								  0) == ERR_TRANSFER)
-  {   
+			       EP1_OUT, 
+			       (unsigned char *) header,
+			       length[0],
+			       0) == ERR_TRANSFER){   
     g_free(length);
     g_free(header);
-	g_free(payload);
+    g_free(payload);
     gst_dp_packetizer_free (gdp);
-	return FALSE;								  
+    return FALSE;								  
   }
-  g_print("sink: Sent header\n");
+
   /* Get the length of the payload */
   paylength = GST_READ_UINT32_BE(header+6);
   
   /* Send the payload */
   if (usb_host_device_transfer(s->host, 
-								  EP1_OUT, 
-								  (unsigned char *) payload,
-								  paylength,
-								  0) == ERR_TRANSFER)
-  {   
+			       EP1_OUT, 
+			       (unsigned char *) payload,
+			       paylength,
+			       0) == ERR_TRANSFER){   
     g_free(length);
     g_free(header);
-	g_free(payload);
+    g_free(payload);
     gst_dp_packetizer_free (gdp);
-	return FALSE;								  
+    return FALSE;								  
   }
   
   g_free(length);
   g_free(header);
   g_free(payload);
   gst_dp_packetizer_free (gdp);
-  GST_WARNING("Caps sent");
   return TRUE;
+}
+
+static GstStateChangeReturn
+gst_usb_sink_change_state (GstElement * element,
+    GstStateChange transition)
+{
+  GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+  GstUsbSink *sink = GST_USB_SINK (element);
+  guint *notification = g_malloc(sizeof(guint));
+
+  switch (transition) {
+    
+  case GST_STATE_CHANGE_PAUSED_TO_PLAYING:{
+    while (!sink->play)
+      g_usleep(10);
+    sink->sync= gst_util_get_timestamp()- gst_element_get_base_time(element);
+  }
+    break;
+  default:
+    break;
+    
+  }
+  
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  
+  switch (transition) {
+  case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
+    
+    break;
+  default:
+    break;
+  }
+  
+  g_free(notification);
+
+  return ret;
 }

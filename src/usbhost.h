@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <pthread.h>
 
+#define DPOINT printf("Debug point %s %d\n", __FUNCTION__, __LINE__)
+
 /**
  * Endpoint addresses
  */

@@ -19,8 +19,20 @@ typedef enum _GST_USB_MESSAGE
   GST_USB_CONNECTED,
   
   /** Remote device is sending an event */
-  GST_USB_EVENT
-  	
+  GST_USB_EVENT,
+  
+  /** Remote device is asking for system time */
+  GST_USB_GET_TIME,
+  
+  /** The following transfer contains system time */
+  GST_USB_TIME,	
+
+  /** Remote device is telling he is ready to play */
+  GST_USB_PLAY,
+
+  /** End of stream event */
+  GST_USB_STOP
+
 } GST_USB_MESSAGE;	  
 
 

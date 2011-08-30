@@ -26,7 +26,7 @@ HOST_EXIT_CODE usb_host_new(usb_host *host, VERBOSE v)
 {
   if (libusb_init ( &(host->ctx) ) == 1)  /* 0 on success LIBUSB_ERROR on error */
   {
-	return ERR_INIT;
+    return ERR_INIT;
   }	
   libusb_set_debug (host->ctx, v); /* Set level of verbosity */
   host->connected = 0;
@@ -39,8 +39,8 @@ HOST_EXIT_CODE usb_host_device_open(usb_host *host, uint16_t vendor_id,
 {
 	
   host->devh = libusb_open_device_with_vid_pid(host->ctx,
-											   vendor_id,
-											   product_id);
+                                               vendor_id,
+                                               product_id);
   if (host->devh == NULL)
     return ERR_OPEN;			
   
@@ -51,28 +51,29 @@ HOST_EXIT_CODE usb_host_device_open(usb_host *host, uint16_t vendor_id,
 }
 
 HOST_EXIT_CODE usb_host_device_transfer(usb_host *host, 
-								  EP_ADRESS endp, 
-								  unsigned char *buffer,
-								  int length,
-								  unsigned int timeout)
+					EP_ADRESS endp, 
+					unsigned char *buffer,
+					int length,
+					unsigned int timeout)
 {
   int r = libusb_bulk_transfer(host->devh, (unsigned char) endp, 
                                buffer, length, &(host->transferred),
-							   timeout);
-							   
-  if (r != 0 && host->transferred != length)
-  {
-	return ERR_TRANSFER; 
+			       timeout);
+  
+  if (r != 0 && host->transferred != length){
+    return ERR_TRANSFER; 
   }
   
   return EOK;
 }								  
-								  
 
-void usb_host_free(usb_host *device)
-{
-  libusb_release_interface 	(device->devh, 0); 				
+
+void usb_host_free(usb_host *device){	
+  libusb_release_interface (device->devh, 0); 
+  DPOINT;				
   libusb_close (device->devh);	
+  DPOINT;
   libusb_exit (device->ctx);
+  DPOINT;
 }
 
