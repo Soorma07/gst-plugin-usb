@@ -32,6 +32,11 @@ GST_DEBUG_CATEGORY_STATIC (gst_usb_src_debug);
 #define GST_USB_SRC_STATE_UNLOCK(s) \
   (g_mutex_unlock(GST_USB_SRC_GET_STATE_LOCK(s)))
 
+enum
+{
+  PROP_0,
+  PROP_USBSYNC
+};
 
 /* the capabilities of the inputs and outputs.
  */
@@ -44,6 +49,10 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
 GST_BOILERPLATE (GstUsbSrc, gst_usb_src, GstPushSrc,
     GST_TYPE_PUSH_SRC);
 
+static void gst_usb_src_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec);
+static void gst_usb_src_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec);
 static GstFlowReturn gst_usb_src_create 
 (GstPushSrc * ps, GstBuffer ** buf);
 static gboolean gst_usb_src_start (GstBaseSrc * bs);
@@ -82,6 +91,7 @@ gst_usb_src_base_init (gpointer gclass)
 static void
 gst_usb_src_class_init (GstUsbSrcClass * klass)
 {
+  GObjectClass *gobject_class = (GObjectClass *) klass;;
   GstElementClass *gstelement_class = (GstElementClass *) klass;
   GstBaseSrcClass *base_class = GST_BASE_SRC_CLASS (klass);
   GstPushSrcClass *push_class = GST_PUSH_SRC_CLASS (klass);
@@ -91,12 +101,19 @@ gst_usb_src_class_init (GstUsbSrcClass * klass)
   GST_DEBUG_CATEGORY_INIT (gst_usb_src_debug, "usbsrc",
 			   0, "USB source element");
 
+  gobject_class->set_property = gst_usb_src_set_property;
+  gobject_class->get_property = gst_usb_src_get_property; 
+
   gstelement_class->change_state =
     gst_usb_src_change_state;
 
   push_class->create = gst_usb_src_create;
   base_class->start = gst_usb_src_start;
   base_class->stop = gst_usb_src_stop;
+
+  g_object_class_install_property (gobject_class, PROP_USBSYNC,
+				   g_param_spec_boolean ("usbsync", "UsbSync", "Synchronize timestamps with src time",
+							 TRUE, G_PARAM_READWRITE));    
 }
 
 /* initialize the new element
@@ -112,6 +129,40 @@ gst_usb_src_init (GstUsbSrc * s,
   s->gadget = g_malloc(sizeof(usb_gadget));
   s->play=FALSE;
   s->state_lock = g_mutex_new ();
+  s->sync = GST_CLOCK_TIME_NONE;
+  s->usbsync = TRUE;
+}
+
+static void
+gst_usb_src_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstUsbSrc *filter = GST_USB_SRC (object);
+
+  switch (prop_id) {
+    case PROP_USBSYNC:
+      filter->usbsync = g_value_get_boolean (value);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static void
+gst_usb_src_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec)
+{
+  GstUsbSrc *filter = GST_USB_SRC (object);
+
+  switch (prop_id) {
+    case PROP_USBSYNC:
+      g_value_set_boolean (value, filter->usbsync);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
 }
 
 /* GstElement vmethod implementations */
@@ -287,6 +338,11 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
     PRINTERR(ret,s)
     return GST_FLOW_ERROR;
   }	
+
+  /* Synchronize with sink's timestamps */
+  if (s->usbsync)
+    GST_BUFFER_TIMESTAMP(*buf) += s->sync;
+
   //GST_USB_SRC_STATE_UNLOCK(s);
   g_free(header);
   g_free(size); 
@@ -547,6 +603,8 @@ gst_usb_src_change_state (GstElement * element,
 			  ("Error Establishing connection with sink"));
 	return GST_STATE_CHANGE_FAILURE;
       }
+      src->sync= gst_util_get_timestamp()- gst_element_get_base_time(element);
+      GST_DEBUG_OBJECT(src, "Estimated %" GST_TIME_FORMAT " for time sync", GST_TIME_ARGS(src->sync));
       break;
     default:
       break;

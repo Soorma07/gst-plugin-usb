@@ -32,6 +32,10 @@ struct _GstUsbSrc
   GstPushSrc parent;
   usb_gadget *gadget;
   gboolean play;
+  
+  /* Time to synchronize timestamps with sink */
+  GstClockTime sync;
+  gboolean usbsync;
 
   /* block device when busy */
   GMutex  *state_lock;

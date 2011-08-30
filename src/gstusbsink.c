@@ -263,6 +263,8 @@ static GstFlowReturn gst_usb_sink_render (GstBaseSink *bs,
   if (s->usbsync)
     GST_BUFFER_TIMESTAMP(buffer) -= s->sync;
   
+  
+
   /* Start transfer */  
   length = g_malloc(sizeof(guint));
   gdp->header_from_buffer(buffer,
@@ -588,6 +590,7 @@ gst_usb_sink_change_state (GstElement * element,
     while (!sink->play)
       g_usleep(10);
     sink->sync= gst_util_get_timestamp()- gst_element_get_base_time(element);
+    GST_DEBUG_OBJECT(sink, "Estimated %" GST_TIME_FORMAT " for time sync", GST_TIME_ARGS(sink->sync));
   }
     break;
   default:
