@@ -43,7 +43,7 @@
 #endif
 
 #include "usbstring.h"
-#include "driver.h"
+#include "usbgadget.h"
 #include "usbgadget_descriptors.h"
 
 //static int verbose;
@@ -866,15 +866,15 @@ static void *simple_ep0_thread (void *param)
         case GADGETFS_CONNECT:
           connected = 1;
           current_speed = event [i].u.speed;
-          if (/*verbose*/1)
+          if (verbose)
             printf ("CONNECT %s\n", speed (event [i].u.speed));
           break;
         case GADGETFS_SETUP:
           connected = 1;
-		  handle_control (gadget, &event [i].u.setup);
+	  handle_control (gadget, &event [i].u.setup);
           break;
         case GADGETFS_DISCONNECT:
-	      connected = 0;
+	  connected = 0;
           current_speed = USB_SPEED_UNKNOWN;
           if (verbose)
             printf("DISCONNECT\n");
@@ -889,7 +889,7 @@ static void *simple_ep0_thread (void *param)
           printf ("* unhandled event %d\n", event [i].type);
       }
     }
-	continue;
+    continue;
   done:
     fflush (stdout);
     if (connected)
@@ -937,14 +937,13 @@ GADGET_EXIT_CODE usb_gadget_free (usb_gadget *gadget)
 }
 
 int usb_gadget_transfer (usb_gadget *gadget, 
-				         GAD_EP_ADDRESS endp,
+			 GAD_EP_ADDRESS endp,
                          unsigned char *buffer,
-						 int length)
-{
+			 int length){
   int  status;
-
+  
   int verbose = gadget->verbosity;
-
+  
   errno = 0;
   switch (endp)
   {
