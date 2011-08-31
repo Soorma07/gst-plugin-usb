@@ -70,10 +70,7 @@ HOST_EXIT_CODE usb_host_device_transfer(usb_host *host,
 
 void usb_host_free(usb_host *device){	
   libusb_release_interface (device->devh, 0); 
-  DPOINT;				
   libusb_close (device->devh);	
-  DPOINT;
   libusb_exit (device->ctx);
-  DPOINT;
 }
 
