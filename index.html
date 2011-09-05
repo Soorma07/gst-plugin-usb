@@ -1,6 +1,50 @@
-<html>
- <title>GStreamer USB Plugin</title>
- <body>
- This is the side for the gst-plugin-usb
- </body>
-</html>
+---
+layout: default
+title: GStreamer USB plugin
+source: https://github.com/RidgeRun/gst-usb-plugin
+---
+
+<div id="blog">
+  <h1>Blog</h1>
+  {% for post in site.posts limit:3 %}
+  <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+  {{ post.content }}
+  <em>Posted on {{ post.date | date_to_long_string }}.</em>
+  {% endfor %}
+
+</div>
+
+<div id="sidebar">
+  <h1> Description </h1>
+  <p> 
+   GstUsb is a Gstreamer plugin that allows two pipelines communicate via USB link.
+   The plugin consists of two elements to send and receive data respectively:
+    <ul>
+     <li> usbsink
+     <li> usbsrc
+    </ul>
+  </p>
+  <p>
+  The philosophy behind GstUsb is to provide agnostic streaming or, in other words, the 
+  possibility to stream any kind of multimedia content using these elements.
+  </p>
+
+  <h1>Documentation</h1>
+  <p>All the documentation is keep at the <a href="{{ page.source }}/wiki">wiki</a>.
+  </p>
+
+  <h1>Maintainers</h1>
+  <ul>
+   <li><a href="https://github.com/ddompe">ddompe</a>
+   <li><a href="https://github.com/michaelgruner">mgruner</a>
+  </ul>
+
+  <h1>Older posts</h1>
+  <ul>
+   {% for post in site.posts offset:3 %}
+    <li><span class="date">{{ post.date | date: "%b %d, %Y" }}</span> &raquo; <a href="{{ post.url }}">{{ post.title }}</a></li>
+    {% endfor %}
+  </ul>
+
+
+</div>
