@@ -2,7 +2,7 @@
  * Copyright (C) 2011 RidgeRun
  *
  */
-//#define USE_DSP 
+
 #define DPOINT printf("Debug point %s %d\n", __FUNCTION__, __LINE__)
 
 #ifdef HAVE_CONFIG_H
@@ -12,12 +12,6 @@
 #include <gst/gst.h>
 #include <pthread.h>
 #include <string.h>
-
-#ifdef USE_DSP
-  #include <xdc/std.h>
-  #include <ti/sdo/ce/CERuntime.h>
-  #include <ti/sdo/ce/osal/Memory.h>
-#endif
 
 #include "gstusbsrc.h"
 
@@ -64,10 +58,6 @@ void *gst_usb_src_down_event (void *src);
 static void close_down_event(void *param);
 static gboolean gst_usb_src_send_caps(GstUsbSrc *s, GstCaps *caps);
 static GstCaps *gst_usb_src_receive_caps(GstUsbSrc *s);
-
-#ifdef USE_DSP
-static void gst_usb_src_free_buffer(guint8 *buffer);
-#endif
 
 /* GObject vmethod implementations */
 
@@ -234,9 +224,6 @@ gst_usb_src_start (GstBaseSrc * bs)
     return FALSE;
   }	
 
-  #ifdef USE_DSP
-  CERuntime_init();
-  #endif
   GST_USB_SRC_STATE_UNLOCK(s);
   g_free(notification);
   return TRUE;
@@ -314,13 +301,6 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
   *buf = gst_dp_buffer_from_header (size[0], header);
   data = GST_BUFFER_DATA(*buf);
   /* Now read the data */
-#ifdef USE_DSP
-  /* if DSP is to be used then allocate memory from CMEM */
-  g_free(data);
-  data = Memory_contigAlloc((*buf)->size, 8);
-  GST_BUFFER_MALLOCDATA(*buf) = (guint8 *)*buf;
-  GST_BUFFER_FREE_FUNC(*buf) = (void *)gst_usb_src_free_buffer;
-#endif
 
   /* Ask for the header */
   if ((ret=usb_gadget_transfer (s->gadget,
@@ -328,11 +308,8 @@ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
                                (unsigned char *) data, 
     	                       (*buf)->size)) != GAD_EOK)	
   {	
-    #ifdef USE_DSP
-    Memory_contigFree(data);
-    #else
+
     g_free(data);
-    #endif
     g_free(size);
     g_free(header);
     PRINTERR(ret,s)
@@ -628,11 +605,4 @@ gst_usb_src_change_state (GstElement * element,
   return ret;
 }
 
-#ifdef USE_DSP
-void gst_usb_src_free_buffer(guint8 *buffer)
-{
-    GstBuffer *gBuf = (GstBuffer *)buffer;
-    Memory_contigFree(GST_BUFFER_DATA(gBuf), GST_BUFFER_SIZE(gBuf));	
-}
-#endif
 

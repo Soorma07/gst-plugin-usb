@@ -86,25 +86,5 @@ dnl set proper LDFLAGS for plugins
 GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).*'
 AC_SUBST(GST_PLUGIN_LDFLAGS)
 
-dnl Erase this section if you are not interested in 
-dnl allocating memory with CMEM
-
-AC_ARG_WITH(dvsdk,
-  [AS_HELP_STRING([--with-dvsdk=<path to dvsdk with Rules.make file>],
-	[Path to a DVSDK with a Rules.make file (dvsdk 4 and up)])],
-	[dvsdk=$withval]
-)
-
-if test "x$dvsdk" = "x" || ! test -f $dvsdk/Rules.make ; then
-    AC_MSG_ERROR([Unable to find a valid Rules.make (DVSDK no provided or path is invalid)]);
-else
-    AC_MSG_NOTICE([Rules.make file found at: $dvsdk/Rules.make]);
-fi
-
-AC_SUBST([RULES_MAKE],["$dvsdk/Rules.make"])
-AC_SUBST([PLATFORMDEFS],[platformdefs.inc])
-
-dnl End of CMEM section
-
 AC_OUTPUT
 
