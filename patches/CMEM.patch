@@ -1,7 +1,7 @@
 Index: src/configure.ac
 ===================================================================
---- src.orig/configure.ac	2011-09-05 10:54:17.146471283 -0600
-+++ src/configure.ac	2011-09-05 10:54:47.546496580 -0600
+--- src.orig/configure.ac	2011-09-05 11:50:56.330940457 -0600
++++ src/configure.ac	2011-09-05 11:51:46.326439905 -0600
 @@ -86,5 +86,25 @@
  GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).*'
  AC_SUBST(GST_PLUGIN_LDFLAGS)
@@ -11,8 +11,8 @@ Index: src/configure.ac
 +
 +AC_ARG_WITH(dvsdk,
 +  [AS_HELP_STRING([--with-dvsdk=<path to dvsdk with Rules.make file>],
-+       [Path to a DVSDK with a Rules.make file (dvsdk 4 and up)])],
-+       [dvsdk=$withval]
++  [Path to a DVSDK with a Rules.make file (dvsdk 4 and up)])],
++  [dvsdk=$withval]
 +)
 +
 +if test "x$dvsdk" = "x" || ! test -f $dvsdk/Rules.make ; then
@@ -30,9 +30,15 @@ Index: src/configure.ac
  
 Index: src/src/Makefile.am
 ===================================================================
---- src.orig/src/Makefile.am	2011-09-05 10:54:17.134905182 -0600
-+++ src/src/Makefile.am	2011-09-05 10:54:47.546496580 -0600
-@@ -10,15 +10,39 @@
+--- src.orig/src/Makefile.am	2011-09-05 11:50:56.286940508 -0600
++++ src/src/Makefile.am	2011-09-05 11:51:46.326439905 -0600
+@@ -1,3 +1,5 @@
++include @RULES_MAKE@
++
+ plugin_LTLIBRARIES = libgstusb.la
+ 
+ libgstusb_la_SOURCES = gstplugin.c \
+@@ -10,14 +12,37 @@
  
  
  # compiler and linker flags used to compile this plugin, set in configure.ac
@@ -40,13 +46,12 @@ Index: src/src/Makefile.am
 +libgstusb_la_CFLAGS = $(GST_CFLAGS) $(LIBUSB_CFLAGS) $(shell cat cmem/compiler.opt)
  libgstusb_la_LIBADD = $(GST_LIBS) $(LIBUSB_LIBS)
 -libgstusb_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
-+libgstusb_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS) -Wl,cmem/linker.cmd
++libgstusb_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS) -Wl,cmem/linker.cmd 
  libgstusb_la_LIBTOOLFLAGS = --tag=disable-static
  
  # headers we need but don't want installed
  noinst_HEADERS = gstusbsrc.h gstusbsink.h usbstring.h usbhost.h usbgadget.h\
   usbgadget_descriptors.h
- 
 +EXTRA_DIST = *.cfg
 +
 +#################################################
@@ -56,7 +61,7 @@ Index: src/src/Makefile.am
 +# XDC Configuration
 +CONFIGURO     = $(XDC_INSTALL_DIR)/xs xdc.tools.configuro
 +BUILT_SOURCES = cmem/compiler.opt cmem/linker.cmd
-+export XDCPATH  = $(XDC_INSTALL_DIR)/packages;$(LINK_INSTALL_DIR);$(FC_INSTALL_DIR)/packages;$(CE_INSTALL_DIR)/packages;$(XDAIS_INSTALL_DIR)/packages;$(CODEC_INSTALL_DIR)/pack
++export XDCPATH  = $(XDC_INSTALL_DIR)/packages;$(LINK_INSTALL_DIR);$(FC_INSTALL_DIR)/packages;$(CE_INSTALL_DIR)/packages;$(XDAIS_INSTALL_DIR)/packages;$(CODEC_INSTALL_DIR)/packages;$(CMEM_INSTALL_DIR)/packages;$(DMAI_INSTALL_DIR)/packages;$(LPM_INSTALL_DIR)/packages;$(BIOS_INSTALL_DIR)/packages;
 +
 +XDC_PLATFORM=undefined_xdc_platform
 +XDC_TARGET=undefined_xdc_target
@@ -65,20 +70,18 @@ Index: src/src/Makefile.am
 +include @PLATFORMDEFS@
 +
 +%/compiler.opt %/linker.cmd : %.cfg
-+       $(CONFIGURO) -c $(CSTOOL_PATH) -o cmem -t $(XDC_TARGET) -p $(XDC_PLATFORM) -b config.bld $<
++	$(CONFIGURO) -c $(CSTOOL_PATH) -o cmem -t $(XDC_TARGET) -p $(XDC_PLATFORM) -b config.bld $<
 +
 +#################################################
 +#              End of CMEM section              #
 +#################################################
-+
+ 
  
  clean-local:
- 	-rm -rf cmem
-\ No newline at end of file
 Index: src/src/gstusbsrc.c
 ===================================================================
---- src.orig/src/gstusbsrc.c	2011-09-05 10:54:17.126864702 -0600
-+++ src/src/gstusbsrc.c	2011-09-05 10:55:59.771876039 -0600
+--- src.orig/src/gstusbsrc.c	2011-09-05 11:50:56.194311255 -0600
++++ src/src/gstusbsrc.c	2011-09-05 14:17:03.218560381 -0600
 @@ -2,7 +2,7 @@
   * Copyright (C) 2011 RidgeRun
   *
@@ -101,7 +104,50 @@ Index: src/src/gstusbsrc.c
  #include "gstusbsrc.h"
  
  
-@@ -59,6 +65,10 @@
+@@ -27,26 +33,26 @@
+   (g_mutex_unlock(GST_USB_SRC_GET_STATE_LOCK(s)))
+ 
+ enum
+-{
+-  PROP_0,
++  {
++    PROP_0,
+   PROP_USBSYNC
+-};
++  };
+ 
+ /* the capabilities of the inputs and outputs.
+  */
+ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
+-    GST_PAD_SRC,
+-    GST_PAD_ALWAYS,
+-    GST_STATIC_CAPS ("ANY")
+-    );
++								   GST_PAD_SRC,
++								   GST_PAD_ALWAYS,
++								   GST_STATIC_CAPS ("ANY")
++								   );
+ 
+ GST_BOILERPLATE (GstUsbSrc, gst_usb_src, GstPushSrc,
+-    GST_TYPE_PUSH_SRC);
++		 GST_TYPE_PUSH_SRC);
+ 
+ static void gst_usb_src_set_property (GObject * object, guint prop_id,
+-    const GValue * value, GParamSpec * pspec);
++				      const GValue * value, GParamSpec * pspec);
+ static void gst_usb_src_get_property (GObject * object, guint prop_id,
+-    GValue * value, GParamSpec * pspec);
++				      GValue * value, GParamSpec * pspec);
+ static GstFlowReturn gst_usb_src_create 
+ (GstPushSrc * ps, GstBuffer ** buf);
+ static gboolean gst_usb_src_start (GstBaseSrc * bs);
+@@ -54,11 +60,15 @@
+ static GstStateChangeReturn gst_usb_src_change_state (GstElement *
+ 						      element, GstStateChange transition);
+ 
+-void *gst_usb_src_down_event (void *src);	
++void *gst_usb_src_down_event (void *src);
+ static void close_down_event(void *param);
  static gboolean gst_usb_src_send_caps(GstUsbSrc *s, GstCaps *caps);
  static GstCaps *gst_usb_src_receive_caps(GstUsbSrc *s);
  
@@ -112,9 +158,101 @@ Index: src/src/gstusbsrc.c
  /* GObject vmethod implementations */
  
  static void
-@@ -224,6 +234,9 @@
+@@ -70,7 +80,7 @@
+ 				       "usbsrc",
+ 				       "Hardware",
+ 				       "Elements that receives data across an USB link",
+-				       "Michael Gruner <<michael.gruner@ridgerun.com>>"\
++				              "Michael Gruner <<michael.gruner@ridgerun.com>>"\
+ 				       "\n\t\tDiego Dompe <<diego.dompe@ridgerun.com>>");
+   
+   gst_element_class_add_pad_template (element_class,
+@@ -112,8 +122,8 @@
+ gst_usb_src_init (GstUsbSrc * s,
+ 		  GstUsbSrcClass * gclass)
+ {
+-  /* Initialize data protocol library */	
+-  gst_dp_init();	
++  /* Initialize data protocol library */
++  gst_dp_init();
+   gst_base_src_set_live (GST_BASE_SRC (s), TRUE);
+ 
+   s->gadget = g_malloc(sizeof(usb_gadget));
+@@ -125,33 +135,33 @@
+ 
+ static void
+ gst_usb_src_set_property (GObject * object, guint prop_id,
+-    const GValue * value, GParamSpec * pspec)
++			  const GValue * value, GParamSpec * pspec)
+ {
+   GstUsbSrc *filter = GST_USB_SRC (object);
+ 
+   switch (prop_id) {
+-    case PROP_USBSYNC:
+-      filter->usbsync = g_value_get_boolean (value);
+-      break;
+-    default:
+-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+-      break;
++  case PROP_USBSYNC:
++    filter->usbsync = g_value_get_boolean (value);
++    break;
++  default:
++    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++    break;
+   }
+ }
+ 
+ static void
+ gst_usb_src_get_property (GObject * object, guint prop_id,
+-    GValue * value, GParamSpec * pspec)
++			  GValue * value, GParamSpec * pspec)
+ {
+   GstUsbSrc *filter = GST_USB_SRC (object);
+ 
+   switch (prop_id) {
+-    case PROP_USBSYNC:
+-      g_value_set_boolean (value, filter->usbsync);
+-      break;
+-    default:
+-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+-      break;
++  case PROP_USBSYNC:
++    g_value_set_boolean (value, filter->usbsync);
++    break;
++  default:
++    G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++    break;
+   }
+ }
+ 
+@@ -208,22 +218,25 @@
+                             GAD_UP_EP,   
+                             (unsigned char *) notification, 
+ 			    sizeof(guint)) != GAD_EOK)
+-  {
+-    g_free(notification);	  							
+-    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+-      ("Error Establishing connection with sink"));
+-    return FALSE;
+-  }		
++    {
++      g_free(notification);  
++      GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
++			("Error Establishing connection with sink"));
++      return FALSE;
++    }
+ 
+   /* Create a thread for downstream events */
+   if (pthread_create (&(s->gadget->ev_down.thread), NULL,
+ 		      (void *) gst_usb_src_down_event, (void *) bs) != 0){
+     GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+-      ("Unable to create down events thread, aborting.."));	  
++		      ("Unable to create down events thread, aborting.."));  
+     g_free(notification);
      return FALSE;
-   }	
+-  }	
++  }
  
 +  #ifdef USE_DSP
 +  CERuntime_init();
@@ -122,42 +260,451 @@ Index: src/src/gstusbsrc.c
    GST_USB_SRC_STATE_UNLOCK(s);
    g_free(notification);
    return TRUE;
-@@ -301,6 +314,13 @@
+@@ -235,32 +248,32 @@
+   GstUsbSrc *s = GST_USB_SRC (bs);
+ 
+   if (pthread_cancel(s->gadget->ev_down.thread))
+-  {
+-    GST_WARNING_OBJECT(s,"Problem closing USB events thread");
+-  }
++    {
++      GST_WARNING_OBJECT(s,"Problem closing USB events thread");
++    }
+   usb_gadget_free(s->gadget);
+   g_free(s->gadget);
+   return TRUE;
+ }
+ 
+ #define PRINTERR(ret,s) switch(ret) \
+-                        { \
+-	                  case ERR_OPEN_FD:\
+-                            GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
+-			      ("Error opening file descriptor for transfer"));\
+-                            break;\
+-                          case ERR_READ_FD:\
+-                            GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
+-			      ("Can't write to file descriptor"));\
+-                            break;\
+-			  case SHORT_READ_FD:\
+-                            GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
+-			      ("File descriptor short read, aborting."));\
+-	                    break;\
+-	                  default:\
+-                            break;\
+-                        }	   
+-					    
++    { \
++ case ERR_OPEN_FD:\
++ GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
++		   ("Error opening file descriptor for transfer"));\
++ break;\
++ case ERR_READ_FD:\
++ GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
++		   ("Can't write to file descriptor"));\
++ break;\
++ case SHORT_READ_FD:\
++ GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),\
++		   ("File descriptor short read, aborting."));\
++ break;\
++ default:\
++ break;\
++ }   
++
+ static GstFlowReturn
+ gst_usb_src_create (GstPushSrc * ps, GstBuffer ** buf)
+ {
+@@ -273,13 +286,13 @@
+   /* Ask for the size of the header */
+   if ( (ret=usb_gadget_transfer (s->gadget,
+                                  GAD_STREAM_EP, 
+-                                (unsigned char *) size, 
+-		  		 sizeof(guint)))  != GAD_EOK )
+-  {	
+-    g_free(size);
+-    PRINTERR(ret,s)
+-    return GST_FLOW_ERROR;
+-  }
++				 (unsigned char *) size, 
++				 sizeof(guint)))  != GAD_EOK )
++    {
++      g_free(size);
++      PRINTERR(ret,s)
++	return GST_FLOW_ERROR;
++    }
+ 
+   /* Alocate memory for the header */
+   header = (void *) g_malloc(size[0]);
+@@ -287,34 +300,45 @@
+   /* Ask for the header */
+   if ( (ret=usb_gadget_transfer (s->gadget, 
+                                  GAD_STREAM_EP,  
+-                                (unsigned char *) header, 
+-                        	 size[0])) != GAD_EOK)	
+-  {												
+-    g_free(size);
+-    g_free(header);
+-    PRINTERR(ret,s)
+-    return GST_FLOW_ERROR;
+-  }
+-	
++				 (unsigned char *) header, 
++				 size[0])) != GAD_EOK)
++    {
++      g_free(size);
++      g_free(header);
++      PRINTERR(ret,s)
++	return GST_FLOW_ERROR;
++    }
++
+   /* Create the buffer using gst data protocol */
+ 
    *buf = gst_dp_buffer_from_header (size[0], header);
    data = GST_BUFFER_DATA(*buf);
    /* Now read the data */
 +#ifdef USE_DSP
 +  /* if DSP is to be used then allocate memory from CMEM */
 +  g_free(data);
-+  data = Memory_contigAlloc((*buf)->size, 8);
++  GST_BUFFER_DATA(*buf) = Memory_contigAlloc((*buf)->size, 8);
++  data = GST_BUFFER_DATA(*buf);
 +  GST_BUFFER_MALLOCDATA(*buf) = (guint8 *)*buf;
 +  GST_BUFFER_FREE_FUNC(*buf) = (void *)gst_usb_src_free_buffer;
 +#endif
  
    /* Ask for the header */
    if ((ret=usb_gadget_transfer (s->gadget,
-@@ -308,8 +328,11 @@
-                                (unsigned char *) data, 
-     	                       (*buf)->size)) != GAD_EOK)	
-   {	
+                                 GAD_STREAM_EP,   
+-                               (unsigned char *) data, 
+-    	                       (*buf)->size)) != GAD_EOK)	
+-  {	
 -
+-    g_free(data);
+-    g_free(size);
+-    g_free(header);
+-    PRINTERR(ret,s)
+-    return GST_FLOW_ERROR;
+-  }	
++				(unsigned char *) data, 
++				(*buf)->size)) != GAD_EOK)
++    {
 +    #ifdef USE_DSP
-+    Memory_contigFree(data);
++      Memory_contigFree(data, (*buf)->size);
 +    #else
-     g_free(data);
++      g_free(data);
 +    #endif
-     g_free(size);
++      g_free(size);
++      g_free(header);
++      PRINTERR(ret,s)
++	return GST_FLOW_ERROR;
++    }
+ 
+   /* Synchronize with sink's timestamps */
+   if (s->usbsync)
+@@ -330,91 +354,91 @@
+ /* Down events thread */
+ void *gst_usb_src_down_event (void *src)
+ {
+-  GstBaseSrc *bs = GST_BASE_SRC(src);	
+-  GstUsbSrc *s = GST_USB_SRC(bs);	
++  GstBaseSrc *bs = GST_BASE_SRC(src);
++  GstUsbSrc *s = GST_USB_SRC(bs);
+   
+-  guint *notification = g_malloc(sizeof(guint));	
++  guint *notification = g_malloc(sizeof(guint));
+   GstCaps *caps;
+   
+   pthread_cleanup_push (close_down_event, (void *) notification);
+   
+   while (TRUE)
+-  {
+-    /* Create a cancellation test point */  
+-    pthread_testcancel();  
+-    /* Receive an event (internal polling) */
+-    if (usb_gadget_transfer(s->gadget, 
+-	                    GAD_DOWN_EP, 
+-		  	   (unsigned char *) notification,
+-			    sizeof(guint)) != GAD_EOK)
+-    { 
+-      GST_WARNING_OBJECT(s,"Error receving downstream event");
+-      continue;    							      
+-    }
+-    /* Wait until gadget is free */
+-    GST_USB_SRC_STATE_LOCK(s);
+-    switch (notification[0])
+-    { 
+-      /* Sink is asking for our allowed caps */
+-      case GST_USB_GET_CAPS:
+-      {		  
+-	notification[0] = GST_USB_CAPS;
+-	GST_DEBUG_OBJECT (s,"Received a get caps");
+-	/* Send a caps message */
+-	if ( usb_gadget_transfer (s->gadget,
+-                                 GAD_UP_EP,   
+-                                 (unsigned char *) notification, 
+-				  sizeof(guint)) != GAD_EOK)
+-	{			
+-	  GST_USB_SRC_STATE_UNLOCK(s);
+-          GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+-                           ("Error returning caps"));	
+-        }
+-	if (gst_pad_is_linked(GST_BASE_SRC_PAD(bs)))
+-	  caps = gst_pad_peer_get_caps (GST_BASE_SRC_PAD(bs));
+-	else
+-	  caps = gst_caps_copy (gst_pad_get_pad_template_caps\
+-		                       (GST_BASE_SRC_PAD(bs)));	   
+-	if (!gst_usb_src_send_caps(s, caps))
+-	{
+-	  GST_USB_SRC_STATE_UNLOCK(s);
+-	  GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+-			    ("Error sending caps"));
++    {
++      /* Create a cancellation test point */  
++      pthread_testcancel();  
++      /* Receive an event (internal polling) */
++      if (usb_gadget_transfer(s->gadget, 
++			      GAD_DOWN_EP, 
++			      (unsigned char *) notification,
++			      sizeof(guint)) != GAD_EOK)
++	{ 
++	  GST_WARNING_OBJECT(s,"Error receving downstream event");
++	  continue;          
+ 	}
+-	GST_DEBUG_OBJECT (s,"Caps sent\n");
+-	gst_caps_unref(caps);
+-	break;
+-      }
+-      /* Sink is sending a set of caps for src to set */
+-      case GST_USB_SET_CAPS:{
+-	GstCaps *caps;
+-        GST_DEBUG_OBJECT (s,"Received a set caps");
+-	caps = gst_usb_src_receive_caps(s);
+-	s->play = TRUE;
+-	if (!gst_pad_set_caps (GST_BASE_SRC_PAD(bs), caps)){
+-	  GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
+-			    ("Error setting caps"));
++      /* Wait until gadget is free */
++      GST_USB_SRC_STATE_LOCK(s);
++      switch (notification[0])
++	{ 
++	  /* Sink is asking for our allowed caps */
++	case GST_USB_GET_CAPS:
++	  {  
++	    notification[0] = GST_USB_CAPS;
++	    GST_DEBUG_OBJECT (s,"Received a get caps");
++	    /* Send a caps message */
++	    if ( usb_gadget_transfer (s->gadget,
++				      GAD_UP_EP,   
++				      (unsigned char *) notification, 
++				      sizeof(guint)) != GAD_EOK)
++	      {
++		GST_USB_SRC_STATE_UNLOCK(s);
++		GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
++				  ("Error returning caps"));
++	      }
++	    if (gst_pad_is_linked(GST_BASE_SRC_PAD(bs)))
++	      caps = gst_pad_peer_get_caps (GST_BASE_SRC_PAD(bs));
++	    else
++	      caps = gst_caps_copy (gst_pad_get_pad_template_caps\
++				    (GST_BASE_SRC_PAD(bs)));   
++	    if (!gst_usb_src_send_caps(s, caps))
++	      {
++		GST_USB_SRC_STATE_UNLOCK(s);
++		GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
++				  ("Error sending caps"));
++	      }
++	    GST_DEBUG_OBJECT (s,"Caps sent\n");
++	    gst_caps_unref(caps);
++	    break;
++	  }
++	  /* Sink is sending a set of caps for src to set */
++	case GST_USB_SET_CAPS:{
++	  GstCaps *caps;
++	  GST_DEBUG_OBJECT (s,"Received a set caps");
++	  caps = gst_usb_src_receive_caps(s);
++	  s->play = TRUE;
++	  if (!gst_pad_set_caps (GST_BASE_SRC_PAD(bs), caps)){
++	    GST_ELEMENT_ERROR(s,STREAM,FAILED,(NULL),
++			      ("Error setting caps"));
++	  }
++	  else{
++	    GST_DEBUG_OBJECT (s,"Caps set correctly");
++	  }
++	  break;
+ 	}
+-	else{
+-	  GST_DEBUG_OBJECT (s,"Caps set correctly");
++	default:
++	  GST_WARNING_OBJECT(s,"Unknown downstream event");
++	  break;  
+ 	}
+-	break;
+-      }
+-      default:
+-	GST_WARNING_OBJECT(s,"Unknown downstream event");
+-	break;	  
++      GST_USB_SRC_STATE_UNLOCK(s);
+     }
+-    GST_USB_SRC_STATE_UNLOCK(s);
+-  }
+   /* It should never reach this point */
+-  pthread_cleanup_pop (1);	 	  
+-}	
++  pthread_cleanup_pop (1);   
++}
+ 
+ static void close_down_event(void *param)
+ {
+-  GST_INFO ("Closing down events thread");		
+-  guint *notification = (guint *) param;	
+-  g_free(notification);	
++  GST_INFO ("Closing down events thread");
++  guint *notification = (guint *) param;
++  g_free(notification);
+ }
+ 
+ 
+@@ -422,11 +446,11 @@
+ {
+   GstDPPacketizer *gdp = gst_dp_packetizer_new (GST_DP_VERSION_0_2);
+   guint8 *header, *payload;
+-  guint *length, paylength;	
++  guint *length, paylength;
+   
+   length = g_malloc(sizeof(guint));
+ 
+-  /* Make a package from the given caps */	
++  /* Make a package from the given caps */
+   gdp->packet_from_caps(caps,
+                         GST_DP_HEADER_FLAG_NONE,
+                         &length[0],
+@@ -442,7 +466,7 @@
      g_free(header);
-     PRINTERR(ret,s)
-@@ -605,4 +628,11 @@
+     g_free(payload);
+     gst_dp_packetizer_free (gdp);
+-    return FALSE;								  
++    return FALSE;  
+   }
+ 
+   /* Now send the header */
+@@ -454,7 +478,7 @@
+     g_free(header);
+     g_free(payload);
+     gst_dp_packetizer_free (gdp);
+-    return FALSE;								  
++    return FALSE;  
+   }
+   
+   /* Get the length of the payload */
+@@ -469,7 +493,7 @@
+     g_free(header);
+     g_free(payload);
+     gst_dp_packetizer_free (gdp);
+-    return FALSE;								  
++    return FALSE;  
+   }
+ 
+   g_free(length);
+@@ -488,17 +512,17 @@
+   
+   /* Wait unitl gadget is connected */
+   if (s->gadget->connected != 1)
+-  {
+-    g_free(length);
+-    return NULL;
+-  }
++    {
++      g_free(length);
++      return NULL;
++    }
+   
+   /* Ask for the size of the header */
+   if ( usb_gadget_transfer (s->gadget,
+ 			    GAD_DOWN_EP,   
+ 			    (unsigned char *) length, 
+-			    sizeof(guint)) != GAD_EOK){	
+-    g_free(length);  		
++			    sizeof(guint)) != GAD_EOK){
++    g_free(length);  
+     return NULL;
+   }
+ 
+@@ -509,9 +533,9 @@
+   if ( usb_gadget_transfer (s->gadget,
+ 			    GAD_DOWN_EP,   
+ 			    (unsigned char *) header, 
+-			    length[0]) != GAD_EOK){	
++			    length[0]) != GAD_EOK){
+     g_free(length);
+-    g_free(header);  											
++    g_free(header);  
+     return NULL;
+   }
+ 
+@@ -552,15 +576,15 @@
+ 
+ static GstStateChangeReturn
+ gst_usb_src_change_state (GstElement * element,
+-    GstStateChange transition)
++			  GstStateChange transition)
+ {
+   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+   GstUsbSrc *src = GST_USB_SRC (element);
+   guint *notification = g_malloc(sizeof(guint));   
+- 										
++  
+   /* Handle ramp-up state changes */
+   switch (transition) 
+-  {
++    {
+     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+       /* Wait until caps are set */
+       while (!src->play){
+@@ -575,17 +599,17 @@
+ 				(unsigned char *) notification, 
+ 				sizeof(guint)) != GAD_EOK)
+ 	{
+-	g_free(notification);	  							
+-	GST_ELEMENT_ERROR(src,STREAM,FAILED,(NULL),
+-			  ("Error Establishing connection with sink"));
+-	return GST_STATE_CHANGE_FAILURE;
+-      }
++	  g_free(notification);  
++	  GST_ELEMENT_ERROR(src,STREAM,FAILED,(NULL),
++			    ("Error Establishing connection with sink"));
++	  return GST_STATE_CHANGE_FAILURE;
++	}
+       src->sync= gst_util_get_timestamp()- gst_element_get_base_time(element);
+       GST_DEBUG_OBJECT(src, "Estimated %" GST_TIME_FORMAT " for time sync", GST_TIME_ARGS(src->sync));
+       break;
+     default:
+       break;
+-  }
++    }
+ 
+   /* Pass state changes to base class */
+   ret = GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
+@@ -594,15 +618,21 @@
+ 
+   /* Handle ramp-down state changes */
+   switch (transition) 
+-  {
++    {
+     case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
+-/*   TODO: send stop notification here if needed */
++      /*   TODO: send stop notification here if needed */
+       break;
+     default:
+       break;
+-  }
++    }
+   g_free(notification);
    return ret;
  }
  
+-
 +#ifdef USE_DSP
 +void gst_usb_src_free_buffer(guint8 *buffer)
 +{
-+    GstBuffer *gBuf = (GstBuffer *)buffer;
-+    Memory_contigFree(GST_BUFFER_DATA(gBuf), GST_BUFFER_SIZE(gBuf));	
++  GstBuffer *gBuf = (GstBuffer *)buffer;
++  Memory_contigFree(GST_BUFFER_DATA(gBuf), GST_BUFFER_SIZE(gBuf));
 +}
 +#endif
- 
