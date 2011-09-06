@@ -7,8 +7,9 @@ dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=0.10.16
 GSTPB_REQUIRED=0.10.16
 
-AC_CONFIG_SRCDIR([src/gstplugin.c])
+AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_FILES([Makefile src/Makefile])
 
 dnl required version of automake
 AM_INIT_AUTOMAKE([1.10])
@@ -23,7 +24,8 @@ dnl required version of libtool
 LT_PREREQ([2.2.6])
 LT_INIT
 
-dnl give error and exit if we don't have pkgconfig
+
+dnl give error and exit if we don\'t have pkgconfig
 AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
   AC_MSG_ERROR([You need to have pkg-config installed!])
 ])
@@ -34,6 +36,7 @@ dnl
 PKG_CHECK_MODULES(GST, [
   gstreamer-0.10 >= $GST_REQUIRED
   gstreamer-base-0.10 >= $GST_REQUIRED
+  gstreamer-dataprotocol-0.10 >= $GST_REQUIRED
 ], [
   AC_SUBST(GST_CFLAGS)
   AC_SUBST(GST_LIBS)
@@ -44,6 +47,19 @@ PKG_CHECK_MODULES(GST, [
       libgstreamer0.10-dev and libgstreamer-plugins-base0.10-dev.
       on RPM-based systems gstreamer0.10-devel, libgstreamer0.10-devel
       or similar. The minimum version required is $GST_REQUIRED.
+  ])
+])
+
+
+
+PKG_CHECK_MODULES(LIBUSB, [
+  libusb-1.0
+], [
+  AC_SUBST(LIBUSB_CFLAGS)
+  AC_SUBST(LIBUSB_LIBS)
+], [
+AC_MSG_ERROR([
+      Check for libusb to be installed.
   ])
 ])
 
@@ -70,6 +86,5 @@ dnl set proper LDFLAGS for plugins
 GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).*'
 AC_SUBST(GST_PLUGIN_LDFLAGS)
 
-AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
 

@@ -1,0 +1,7 @@
+#ifndef __USB_GADGET_DESCRIPTORS_H__
+#define __USB_GADGET_DESCRIPTORS_H__
+
+
+
+
+#endif /* __USB_GSDGET_DESCRIPTORS_H__ */

@@ -7,10 +7,12 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstpushsrc.h>
+#include <gst/dataprotocol/dataprotocol.h>
+#include "usbgadget.h"
+#include "gstusbmessages.h"
 
 G_BEGIN_DECLS
 
-/* #defines don't like whitespacey bits */
 #define GST_TYPE_USB_SRC \
   (gst_usb_src_get_type())
 #define GST_USB_SRC(obj) \
@@ -28,6 +30,15 @@ typedef struct _GstUsbSrcClass GstUsbSrcClass;
 struct _GstUsbSrc
 {
   GstPushSrc parent;
+  usb_gadget *gadget;
+  gboolean play;
+  
+  /* Time to synchronize timestamps with sink */
+  GstClockTime sync;
+  gboolean usbsync;
+
+  /* block device when busy */
+  GMutex  *state_lock;
 };
 
 struct _GstUsbSrcClass 
