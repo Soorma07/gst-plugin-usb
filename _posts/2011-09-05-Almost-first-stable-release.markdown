@@ -1,1 +1,0 @@
-Gst-usb-plugin first stable release almost here! Stay tuned to give it a try.
